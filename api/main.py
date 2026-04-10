@@ -51,6 +51,13 @@ def _bq_client():
     return bigquery.Client(project=project)
 
 
+# ── GET /health (Render health check) ──────────────────────────────
+
+@app.route("/health")
+def health_check():
+    return {"status": "ok"}
+
+
 # ── GET /api/health ────────────────────────────────────────────────
 
 @app.route("/api/health")

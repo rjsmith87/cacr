@@ -65,39 +65,37 @@ For a 3-step agentic pipeline, the cascade-aware router defaults to Flash Lite f
 
 The remaining opportunity is in calibration-based dynamic routing: GPT-4o-mini's strong calibration on hard examples (H:+0.82) means it could serve as a "confidence-aware escalation target" when Flash Lite reports low confidence — but this requires switching from self-reported confidence to logprob-based confidence extraction.
 
-## CVE Case Study
+## CVE Case Study (12 Real CVEs)
 
-6 real CVEs tested: CVE-2023-30861 (Flask session disclosure), CVE-2023-32681 (Requests credential leak on redirect), CVE-2018-18074 (Requests auth leak cross-host), CVE-2019-11324 (urllib3 cert bypass, critical), CVE-2022-29217 (PyJWT algorithm confusion, critical), CVE-2021-33503 (urllib3 ReDoS).
+12 CVEs tested across Flask, Requests, urllib3, Jinja2, PyJWT, PyYAML, Werkzeug, and certifi. Severity distribution: 3 critical, 5 high, 4 medium. All 12 are real, patched vulnerabilities with known CVE IDs.
 
 ### Detection Results (step 1: is this code vulnerable?)
 
-| Model               | Detected | Correct | Missed High/Crit | Overconf Miss | Mean Conf |
-|---------------------|----------|---------|-------------------|---------------|-----------|
-| claude-haiku-4-5    | 6/6      | 5/6     | 0                 | 0             | 9.3       |
-| gemini-2.5-flash    | **2/6**  | **2/6** | **4**             | 0             | N/A       |
-| gemini-2.5-flash-lite | 18/18  | 18/18   | 0                 | 0             | 9.0       |
-| gpt-4o-mini         | 12/12    | 12/12   | 0                 | 0             | 7.8       |
+| Model               | CVEs Detected | Missed High/Crit | Mean Conf |
+|---------------------|---------------|-------------------|-----------|
+| claude-haiku-4-5    | 12/12         | 0                 | 9.0       |
+| gemini-2.5-flash    | **6/12**      | **2**             | N/A       |
+| gemini-2.5-flash-lite | 12/12       | 0                 | 9.3       |
+| gpt-4o-mini         | 12/12         | 0                 | 8.0       |
 
-### Key Finding: Gemini 2.5 Flash is blind to subtle CVEs
+### Key Finding: Gemini 2.5 Flash misses half of all CVEs
 
-**Gemini 2.5 Flash missed 4 of 6 CVEs**, including two critical-severity vulnerabilities:
-- **CVE-2019-11324** (urllib3 cert verification bypass) — critical severity, MISSED
-- **CVE-2022-29217** (PyJWT algorithm confusion) — critical severity, MISSED
-- **CVE-2023-30861** (Flask session cookie disclosure) — high severity, MISSED
-- **CVE-2023-32681** (Requests credential leak on redirect) — high severity, MISSED
+**Gemini 2.5 Flash missed 6 of 12 CVEs**, including 2 high-severity vulnerabilities. The specific misses:
+- **CVE-2018-18074** (Requests auth credential leak on cross-host redirect) — high, MISSED
+- **CVE-2021-33503** (urllib3 ReDoS) — medium, MISSED
+- **CVE-2020-28493** (Jinja2 ReDoS) — medium, MISSED
+- **CVE-2022-23491** (certifi compromised root CA) — medium, MISSED
+- **CVE-2023-25577** (Werkzeug multipart DoS) — high, MISSED
+- **CVE-2020-26137** (urllib3 CRLF injection) — medium, MISSED
 
-Flash didn't return confidence scores on its misses (None output), so these aren't "overconfident misses" in the traditional sense — they're **silent failures** where the model didn't even attempt structured output.
+Flash's misses are **silent failures** — no structured output, no confidence score, just empty or unparseable responses. This is worse than a high-confidence wrong answer because there's no signal to trigger a retry or escalation.
+
+The CVEs Flash successfully detected (6/12): CVE-2023-30861, CVE-2023-32681, CVE-2019-11324, CVE-2022-29217, CVE-2021-28363, CVE-2019-20477. These tend to be the most "textbook" examples — the more subtle library-level vulnerabilities are where Flash fails.
+
+### Flash Lite vs Flash: the counterintuitive result
+
+Flash Lite at **$0.04/MTok** detects **12/12 CVEs**. Flash at **$0.10/MTok** detects **6/12**. The cheaper, smaller model is strictly better on security vulnerability detection. This isn't a fluke — Flash Lite consistently returns well-structured responses with confidence scores (mean 9.3), while Flash frequently returns unparseable output.
 
 ### Routing Implication
 
-This is the strongest argument for cascade-aware routing: **the cheapest model (Flash Lite) outperforms the more expensive Flash model on security-critical tasks.** Cost alone doesn't predict capability — Flash at $0.10/MTok is strictly worse than Flash Lite at $0.04/MTok for CVE detection. A naive "pick cheapest" router would choose Flash Lite correctly, but a "pick based on model family/size assumptions" router might incorrectly prefer Flash.
-
-### Strategy Comparison
-
-| Strategy      | Detection Rate | Cost/CVE     |
-|---------------|----------------|--------------|
-| always_tier1  | 6/6 (100%)     | ~$0.000004   |
-| always_tier2  | 6/6 (100%)     | ~$0.000009   |
-| cacr          | 6/6 (100%)     | ~$0.000005   |
-
-All strategies using Flash Lite or GPT-4o-mini achieve 100% detection. The CACR strategy (Flash Lite for detection, Haiku for explanation) costs marginally more than all-Flash-Lite but produces higher quality fix explanations.
+A naive router that picks models by tier or price would choose Flash Lite (cheapest) — and in this case, that's the correct decision. But a router that uses model family as a proxy for capability ("Flash should be better than Flash Lite") would make a catastrophic error on security-critical pipelines. This validates the empirical approach: **benchmark results, not model names, should drive routing.**

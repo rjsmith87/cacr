@@ -1,5 +1,9 @@
 # Overnight Run Issues Log — 2026-04-09/10
 
+## Live URLs
+- **API**: https://cacr-api.onrender.com/health
+- **Dashboard**: https://cacr-dashboard.onrender.com
+
 ## Completed
 - [x] FINDINGS.md + initial commit
 - [x] Expand task battery to 30 examples each (10/10/10 easy/medium/hard)

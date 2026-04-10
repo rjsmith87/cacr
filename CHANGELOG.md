@@ -67,10 +67,17 @@
 ### Documentation
 - README.md, METHODOLOGY.md, CLAUDE.md, CONTEXT.md, FINDINGS.md, CHANGELOG.md
 
-### CVE Case Study
-- 6 real CVEs as Python examples (Flask, Requests, urllib3, PyJWT)
-- 2-step CVE pipeline: detect (yes/no + severity + confidence) → explain (attack + fix)
-- 3 routing strategies tested: always_tier1, always_tier2, cacr
-- All 4 models tested on step 1 detection
-- Key finding: Gemini 2.5 Flash missed 4/6 CVEs (including 2 critical), while Flash Lite detected all 6
+### CVE Case Study (expanded to 12 CVEs)
+- 12 real CVEs: Flask, Requests, urllib3, Jinja2, PyJWT, PyYAML, Werkzeug, certifi
+- 2-step CVE pipeline: detect → explain, 3 routing strategies, all 4 models
+- Key finding: Flash missed 6/12 CVEs (silent failures), Flash Lite detected 12/12
 - BQ writer updated with GOOGLE_APPLICATION_CREDENTIALS_JSON for Render deployment
+
+### Render Deployment
+- Created personal GCP project (cacr-bq-personal) with SA key for BQ access
+- Services: cacr-api (Flask/gunicorn) and cacr-dashboard (Vite static)
+- Live URLs: https://cacr-api.onrender.com, https://cacr-dashboard.onrender.com
+- Added /health endpoint for Render health checks
+
+### Blog Post
+- BLOG_DRAFT.md: "The $0.00000004 Security Scanner" — data-driven writeup of CVE findings
