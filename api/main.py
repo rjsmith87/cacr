@@ -47,8 +47,10 @@ def _bq_client():
     project = os.environ.get("GCP_PROJECT")
     if not project:
         abort(500, "GCP_PROJECT not set")
-    from google.cloud import bigquery
-    return bigquery.Client(project=project)
+    # Use the same credential strategy as bq_writer.py:
+    # GOOGLE_APPLICATION_CREDENTIALS_JSON (Render) → ADC (local)
+    from results.bq_writer import _build_bq_client
+    return _build_bq_client(project)
 
 
 # ── GET /health (Render health check) ──────────────────────────────
@@ -91,30 +93,36 @@ def health():
 
 @app.route("/api/capability-matrix")
 def capability_matrix():
-    client = _bq_client()
-    rows = list(client.query("""
-        SELECT task, model, tier, mean_score, mean_confidence,
-               calibration_r, mean_latency_ms, passes_threshold
-        FROM `cacr_results.benchmark_summaries`
-        WHERE run_ts = (SELECT MAX(run_ts) FROM `cacr_results.benchmark_summaries`)
-        ORDER BY task, model
-    """).result())
-    return jsonify([dict(r) for r in rows])
+    try:
+        client = _bq_client()
+        rows = list(client.query("""
+            SELECT task, model, tier, mean_score, mean_confidence,
+                   calibration_r, mean_latency_ms, passes_threshold
+            FROM `cacr_results.benchmark_summaries`
+            WHERE run_ts = (SELECT MAX(run_ts) FROM `cacr_results.benchmark_summaries`)
+            ORDER BY task, model
+        """).result())
+        return jsonify([dict(r) for r in rows])
+    except Exception as exc:
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
 
 
 # ── GET /api/calibration ───────────────────────────────────────────
 
 @app.route("/api/calibration")
 def calibration():
-    client = _bq_client()
-    rows = list(client.query("""
-        SELECT model, task, difficulty, score, confidence_score
-        FROM `cacr_results.benchmark_calls`
-        WHERE run_ts = (SELECT MAX(run_ts) FROM `cacr_results.benchmark_calls`)
-          AND confidence_score IS NOT NULL
-        ORDER BY model, task
-    """).result())
-    return jsonify([dict(r) for r in rows])
+    try:
+        client = _bq_client()
+        rows = list(client.query("""
+            SELECT model, task, difficulty, score, confidence_score
+            FROM `cacr_results.benchmark_calls`
+            WHERE run_ts = (SELECT MAX(run_ts) FROM `cacr_results.benchmark_calls`)
+              AND confidence_score IS NOT NULL
+            ORDER BY model, task
+        """).result())
+        return jsonify([dict(r) for r in rows])
+    except Exception as exc:
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
 
 
 # ── GET /api/pipeline-cost ─────────────────────────────────────────
