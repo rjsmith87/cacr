@@ -4,10 +4,12 @@ import CalibrationExplorer from './views/CalibrationExplorer'
 import PipelineCost from './views/PipelineCost'
 import RouterPlayground from './views/RouterPlayground'
 import ModelEfficiency from './views/ModelEfficiency'
+import CostModel from './views/CostModel'
 
 const navItems = [
   { to: '/', label: 'Capability Matrix' },
   { to: '/calibration', label: 'Calibration Explorer' },
+  { to: '/cost-model', label: 'Cost Model' },
   { to: '/pipeline', label: 'Pipeline Cost' },
   { to: '/router', label: 'Router Playground' },
   { to: '/efficiency', label: 'Model Efficiency' },
@@ -52,6 +54,7 @@ function App() {
           <Routes>
             <Route path="/" element={<CapabilityMatrix />} />
             <Route path="/calibration" element={<CalibrationExplorer />} />
+            <Route path="/cost-model" element={<CostModel />} />
             <Route path="/pipeline" element={<PipelineCost />} />
             <Route path="/router" element={<RouterPlayground />} />
             <Route path="/efficiency" element={<ModelEfficiency />} />
