@@ -43,14 +43,31 @@ export default function PipelineCost() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.json()
       })
-      .then(d => { setData(d); setLoading(false) })
+      .then(raw => {
+        // API returns: {strategy, total_cost_usd, mean_latency_ms,
+        //   step1_accuracy, step2_accuracy, step3_accuracy, cascade_failure_rate, n}
+        // Frontend expects: {strategy, cost, latency, accuracy}
+        const rows = Array.isArray(raw) ? raw : raw?.strategies || []
+        const mapped = rows.map(r => ({
+          strategy: r.strategy,
+          cost: r.total_cost_usd,
+          latency: r.mean_latency_ms,
+          accuracy: r.step3_accuracy,
+          step1_accuracy: r.step1_accuracy,
+          step2_accuracy: r.step2_accuracy,
+          cascade_failure_rate: r.cascade_failure_rate,
+          n: r.n,
+        }))
+        setData(mapped)
+        setLoading(false)
+      })
       .catch(err => { setError(err.message); setLoading(false) })
   }, [])
 
   if (loading) return <LoadingState />
   if (error) return <ErrorState message={error} />
 
-  const strategies = Array.isArray(data) ? data : data?.strategies || []
+  const strategies = Array.isArray(data) ? data : []
   if (strategies.length === 0) {
     return <EmptyState />
   }
@@ -96,11 +113,11 @@ export default function PipelineCost() {
                   value={formatPct(strategy.accuracy)}
                   isBest={strategy.accuracy != null && strategy.accuracy === bestAccuracy}
                 />
-                {strategy.accuracy_easy != null && (
+                {strategy.step1_accuracy != null && (
                   <div className="pt-2 border-t border-gray-800 space-y-2">
-                    <MetricRow label="Easy tasks" value={formatPct(strategy.accuracy_easy)} />
-                    <MetricRow label="Medium tasks" value={formatPct(strategy.accuracy_medium)} />
-                    <MetricRow label="Hard tasks" value={formatPct(strategy.accuracy_hard)} />
+                    <MetricRow label="Step 1 (severity)" value={formatPct(strategy.step1_accuracy)} />
+                    <MetricRow label="Step 2 (bug type)" value={formatPct(strategy.step2_accuracy)} />
+                    <MetricRow label="Cascade failures" value={formatPct(strategy.cascade_failure_rate)} />
                   </div>
                 )}
               </div>
@@ -117,7 +134,10 @@ export default function PipelineCost() {
               <th className="text-left px-4 py-3 text-gray-400 font-medium">Strategy</th>
               <th className="text-right px-4 py-3 text-gray-400 font-medium">Cost</th>
               <th className="text-right px-4 py-3 text-gray-400 font-medium">Latency</th>
-              <th className="text-right px-4 py-3 text-gray-400 font-medium">Accuracy</th>
+              <th className="text-right px-4 py-3 text-gray-400 font-medium">Step 1</th>
+              <th className="text-right px-4 py-3 text-gray-400 font-medium">Step 2</th>
+              <th className="text-right px-4 py-3 text-gray-400 font-medium">Step 3</th>
+              <th className="text-right px-4 py-3 text-gray-400 font-medium">Cascade Fail</th>
             </tr>
           </thead>
           <tbody>
@@ -133,9 +153,12 @@ export default function PipelineCost() {
                   <td className={`px-4 py-3 text-right font-mono ${strategy.latency === bestLatency ? 'text-emerald-400' : 'text-gray-300'}`}>
                     {formatLatency(strategy.latency)}
                   </td>
+                  <td className="px-4 py-3 text-right font-mono text-gray-300">{formatPct(strategy.step1_accuracy)}</td>
+                  <td className="px-4 py-3 text-right font-mono text-gray-300">{formatPct(strategy.step2_accuracy)}</td>
                   <td className={`px-4 py-3 text-right font-mono ${strategy.accuracy === bestAccuracy ? 'text-emerald-400' : 'text-gray-300'}`}>
                     {formatPct(strategy.accuracy)}
                   </td>
+                  <td className="px-4 py-3 text-right font-mono text-red-400">{formatPct(strategy.cascade_failure_rate)}</td>
                 </tr>
               )
             })}
