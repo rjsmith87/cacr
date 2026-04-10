@@ -10,9 +10,10 @@ CACR (Cascade-Aware Confidence Routing) is an empirical framework for finding th
 runner.py              → Benchmark runner (tasks × models → JSONL + BigQuery)
 tasks/                 → Task battery: CodeReview, SecurityVuln, CodeSummarization (30 each)
 models/                → Adapters: ClaudeHaiku, GeminiFlash, GeminiFlashLite, GPT4oMini
-pipelines/             → 3-step code review pipeline simulation
+pipelines/             → 4-step code review pipeline + CVE detection pipeline
 router/cost_model.py   → Expected cost with cascade failure pricing
-router/policy.py       → LookupTableRouter + CACRRouter (sklearn LogReg)
+router/policy.py       → LookupTableRouter (with escalation) + CACRRouter
+router/complexity.py   → Auto-infer easy/medium/hard from code via static analysis
 api/main.py            → Flask API (7 endpoints, BQ-backed)
 dashboard/             → React + Vite + Recharts + Tailwind
 results/bq_writer.py   → BigQuery streaming insert
@@ -26,9 +27,11 @@ results/bq_writer.py   → BigQuery streaming insert
 - Per-difficulty calibration breakdown (easy/medium/hard)
 - BigQuery ingestion (benchmark_calls, benchmark_summaries, pipeline_results)
 - Cost matrix generation + CSV export
-- Pipeline simulation (all-haiku, all-lite, cacr-routed)
-- Flask API with all 7 endpoints
-- React dashboard (5 views)
+- Pipeline simulation (all-haiku, all-lite, all-gpt4o-mini, cacr-routed) — 4 steps including CVE detection
+- CVE detection case study: 12 real CVEs, Flash missed 6/12, Flash Lite 12/12
+- Automatic complexity inference from code (router/complexity.py)
+- Flask API with 8 endpoints (including /api/route with auto-complexity)
+- React dashboard (5 views) deployed on Render
 
 ### What needs attention
 - Gemini models hit 503s under load — retry logic (5 attempts, 4s base backoff) helps but doesn't eliminate

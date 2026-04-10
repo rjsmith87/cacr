@@ -90,3 +90,11 @@
 - 3 snippets now include security vulnerabilities (SQL injection, XSS, pickle RCE)
 - GPT-4o-mini anomalously slow (13.6s) with worst cascade failure rate
 - CACR matches Flash Lite cost at lower latency via model reuse
+
+### Automatic Complexity Inference
+- router/complexity.py: infer_complexity() classifies code as easy/medium/hard
+  using LOC, control flow keyword count, dangerous pattern detection, import count
+- Weighted voting with dangerous pattern override (os.system, pickle, eval → hard)
+- /api/route accepts complexity="auto" (default) — infers from code, returns result
+- Router Playground: "Auto" is now the default complexity option
+- Inferred complexity badge displayed in routing results

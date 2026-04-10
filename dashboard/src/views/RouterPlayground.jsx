@@ -7,7 +7,7 @@ export default function RouterPlayground() {
   const [form, setForm] = useState({
     code_snippet: '',
     task: 'CodeReview',
-    complexity: 'easy',
+    complexity: 'auto',
     pipeline_position: 1,
   })
   const [result, setResult] = useState(null)
@@ -83,6 +83,7 @@ export default function RouterPlayground() {
                 onChange={(e) => updateField('complexity', e.target.value)}
                 className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30"
               >
+                <option value="auto">Auto (infer from code)</option>
                 <option value="easy">Easy</option>
                 <option value="medium">Medium</option>
                 <option value="hard">Hard</option>
@@ -127,6 +128,15 @@ export default function RouterPlayground() {
 
           {result && (
             <div className="space-y-5">
+              {/* Inferred complexity badge */}
+              {result.inferred_complexity && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-full px-3 py-1 font-medium">
+                    Complexity inferred: {result.inferred_complexity}
+                  </span>
+                </div>
+              )}
+
               {/* Recommended model */}
               <div>
                 <span className="text-xs uppercase tracking-wider text-gray-500 font-medium">Recommended Model</span>

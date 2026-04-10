@@ -71,6 +71,12 @@ For the same pipeline with Flash Lite (100% detection rate):
 
 Flash Lite is **30x cheaper per scan** when you account for cascade failures. And it doesn't miss critical vulnerabilities.
 
+## Dynamic routing: the code tells you which model to use
+
+CACR doesn't just route by task type — it reads the code. An automatic complexity classifier uses static analysis (lines of code, control flow depth, dangerous patterns like `eval` or `pickle`, import count) to infer whether a snippet is easy, medium, or hard. When the classifier detects a hard snippet and the cheapest model's accuracy on hard examples drops below 0.6, the router escalates to a more capable model.
+
+In practice, this means you paste code into the router and it decides both *which model* and *how much to spend* without any manual labeling. The dangerous pattern detector catches security-sensitive code (raw SQL concatenation, `os.system`, `pickle.loads`) and automatically routes it to the hard tier — where the benchmark data shows which models can actually handle it.
+
 ## The takeaway
 
 Don't pick models by name, family, or price tier. Pick them by measured performance on your actual task. The model that costs $0.00000004 per token outperformed the one that costs $0.0000001 per token — not by a little, but by detecting twice as many security vulnerabilities.

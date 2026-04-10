@@ -175,20 +175,30 @@ def route_prompt():
     if not data or "prompt" not in data:
         abort(400, "Missing 'prompt' in request body")
 
+    from router.complexity import infer_complexity
     from router.policy import LookupTableRouter
 
-    # Use LookupTableRouter which reads cost_matrix.csv — real benchmark data.
-    # Accepts 'task' (e.g. "CodeReview") to look up directly in the matrix.
+    # Infer complexity if "auto" or missing
+    complexity = data.get("complexity", "auto")
+    inferred = None
+    if complexity == "auto" or not complexity:
+        inferred = infer_complexity(data["prompt"])
+        complexity = inferred
+
     router = LookupTableRouter()
     task = data.get("task", "CodeReview")
     decision = router.route(task)
 
-    return jsonify({
+    resp = {
         "recommended_model": decision.recommended_model,
         "expected_cost": decision.expected_cost,
         "confidence_interval": list(decision.confidence_interval),
         "reasoning": decision.reasoning,
-    })
+        "complexity": complexity,
+    }
+    if inferred:
+        resp["inferred_complexity"] = inferred
+    return jsonify(resp)
 
 
 # ── GET /api/findings ──────────────────────────────────────────────

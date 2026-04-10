@@ -45,6 +45,7 @@ pipelines/             # Multi-step pipeline simulations
 router/
   cost_model.py        # Expected cost with cascade failure pricing
   policy.py            # LookupTableRouter + CACRRouter (logistic regression)
+  complexity.py        # Auto-infer easy/medium/hard from code via static analysis
 api/main.py            # Flask API — 7 endpoints backed by BigQuery
 dashboard/             # React + Recharts + Tailwind dashboard
 results/               # BigQuery writer + cost matrix CSV

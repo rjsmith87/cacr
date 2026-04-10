@@ -16,7 +16,9 @@ You don't need GPT-4 or Claude Sonnet for every LLM call in a pipeline. For clas
 - **3 code-focused tasks**: CodeReview (bug type), SecurityVuln (OWASP), CodeSummarization (ROUGE-L)
 - **Headline finding**: Flash Lite ($0.04/MTok) matches Haiku ($1.00/MTok) on classification and leads on summarization
 - **Calibration**: GPT-4o-mini is best calibrated (knows when it's uncertain); Flash is worst (always says 10)
-- **Pipeline simulation**: All-Haiku costs $0.00223 vs All-Lite at $0.00008 for similar accuracy
+- **CVE case study**: 12 real CVEs — Flash Lite detected 12/12, Gemini Flash missed 6/12
+- **Pipeline simulation**: 4-step pipeline, 4 strategies — All-Haiku costs $0.003154 vs CACR at $0.000119 (26x cheaper)
+- **Auto complexity**: Router infers easy/medium/hard from code via static analysis, no manual labeling needed
 
 ## Tech stack
 

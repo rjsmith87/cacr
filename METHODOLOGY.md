@@ -75,6 +75,21 @@ A 3-step pipeline (severity → bug type → fix) run on 10 code snippets:
 
 Step 1 (severity classification) is the weak link across all strategies — the severity categories (critical/high/medium/low) are subjective and models disagree with the gold labels. Step 2 (bug type) is strong. The cost difference is dramatic: Haiku costs 28x more for similar accuracy.
 
+## Automatic complexity inference
+
+Rather than requiring users to manually label code complexity, the router infers it from the code itself using static analysis heuristics combined via weighted voting:
+
+| Signal | Easy | Medium | Hard | Weight |
+|---|---|---|---|---|
+| Lines of code | <20 | 20-50 | >50 | 2 |
+| Control flow keywords (if/for/while/try/except/with) | <3 | 3-7 | >7 | 3 |
+| Import count | <3 | 3-6 | >6 | 1 |
+| Dangerous patterns (os.system, pickle, eval, raw SQL) | — | — | override | ∞ |
+
+Each signal casts a weighted vote for easy/medium/hard. Majority of weighted votes wins. The dangerous pattern signal is a hard override: if the code contains `os.system`, `pickle.loads`, `eval()`, `exec()`, or raw SQL string concatenation, it's classified as hard regardless of other signals.
+
+This feeds into the escalation logic: when the router sees a hard snippet and the cheapest model's hard-example score is below 0.6, it escalates to a more expensive model. The inference adds negligible latency (regex-based, no API calls).
+
 ## Future work
 
 1. **Logprob-based confidence**: Replace the second API call with native logprob extraction, halving latency and cost

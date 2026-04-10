@@ -66,6 +66,12 @@ For a 3-step agentic pipeline, the cascade-aware router defaults to Flash Lite f
 
 The remaining opportunity is in calibration-based dynamic routing: GPT-4o-mini's strong calibration on hard examples (H:+0.82) means it could serve as a "confidence-aware escalation target" when Flash Lite reports low confidence — but this requires switching from self-reported confidence to logprob-based confidence extraction.
 
+## Content-Aware Routing: Automatic Complexity Inference
+
+The router now automatically infers code complexity from the snippet itself using static analysis heuristics: lines of code, cyclomatic complexity proxy (control flow keyword count), dangerous pattern detection (os.system, pickle, eval, raw SQL), and import count. Each signal votes easy/medium/hard with weighted voting — dangerous patterns override to hard regardless. This means users don't need to manually classify complexity; the router reads the code and decides.
+
+In practice, complexity inference feeds into the escalation logic: if a snippet is inferred as "hard" and the cheapest tier-1 model scores below 0.6 on hard examples for that task, the router escalates to a more capable model. Currently Flash Lite passes on all tasks at all complexity levels, so escalation doesn't trigger — but the mechanism is ready for tasks where tier-1 models struggle on hard inputs.
+
 ## CVE Case Study (12 Real CVEs)
 
 12 CVEs tested across Flask, Requests, urllib3, Jinja2, PyJWT, PyYAML, Werkzeug, and certifi. Severity distribution: 3 critical, 5 high, 4 medium. All 12 are real, patched vulnerabilities with known CVE IDs.
