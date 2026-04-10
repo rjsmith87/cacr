@@ -1,21 +1,17 @@
-import { useState, useEffect } from 'react'
-import { Tooltip, ResponsiveContainer } from 'recharts'
+import { useState, useEffect, useCallback } from 'react'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 function scoreToColor(score) {
   if (score == null) return '#1f2937'
   const clamped = Math.max(0, Math.min(1, score))
-  // red (fail) -> yellow (mid) -> green (pass)
   const r = Math.round(clamped < 0.5 ? 220 : 220 - (clamped - 0.5) * 2 * 180)
   const g = Math.round(clamped < 0.5 ? clamped * 2 * 180 : 180)
   const b = Math.round(40)
   return `rgb(${r}, ${g}, ${b})`
 }
 
-function HeatmapTooltip({ payload }) {
-  if (!payload || payload.length === 0) return null
-  const data = payload[0]?.payload
+function TooltipContent({ data }) {
   if (!data) return null
   return (
     <div className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 shadow-xl text-sm min-w-max">
@@ -38,7 +34,8 @@ export default function CapabilityMatrix() {
   const [matrix, setMatrix] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [hoveredCell, setHoveredCell] = useState(null)
+  // tooltip: { cell, top, left } or null
+  const [tooltip, setTooltip] = useState(null)
 
   useEffect(() => {
     fetch(`${API}/api/capability-matrix`)
@@ -47,8 +44,6 @@ export default function CapabilityMatrix() {
         return res.json()
       })
       .then(data => {
-        // API returns a flat array: [{task, model, mean_score, ...}]
-        // Transform into {tasks, models, cells} for the heatmap.
         if (!Array.isArray(data) || data.length === 0) {
           setError('Empty response from API')
           setLoading(false)
@@ -70,6 +65,20 @@ export default function CapabilityMatrix() {
         setLoading(false)
       })
       .catch(err => { setError(err.message); setLoading(false) })
+  }, [])
+
+  const handleMouseEnter = useCallback((e, cell) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    // Position tooltip centered below the cell, clamped to viewport
+    const tooltipW = 220
+    let left = rect.left + rect.width / 2 - tooltipW / 2
+    left = Math.max(8, Math.min(left, window.innerWidth - tooltipW - 8))
+    const top = rect.bottom + 8
+    setTooltip({ cell, top, left })
+  }, [])
+
+  const handleMouseLeave = useCallback(() => {
+    setTooltip(null)
   }, [])
 
   if (loading) return <LoadingState />
@@ -100,34 +109,28 @@ export default function CapabilityMatrix() {
             </tr>
           </thead>
           <tbody>
-            {tasks.map((task, rowIdx) => (
+            {tasks.map(task => (
               <tr key={task}>
                 <td className="text-sm text-gray-300 p-2 font-medium">{task}</td>
                 {models.map(model => {
                   const cell = cells.find(c => c.task === task && c.model === model)
                   const score = cell?.score
-                  const isHovered = hoveredCell?.task === task && hoveredCell?.model === model
-                  const showBelow = rowIdx === 0
+                  const isHovered = tooltip?.cell?.task === task && tooltip?.cell?.model === model
                   return (
                     <td key={model} className="p-1">
                       <div
-                        className="relative group cursor-pointer rounded-md h-12 flex items-center justify-center transition-all"
+                        className="cursor-pointer rounded-md h-12 flex items-center justify-center transition-all"
                         style={{
                           backgroundColor: scoreToColor(score),
                           opacity: isHovered ? 1 : 0.85,
                           transform: isHovered ? 'scale(1.05)' : 'scale(1)',
                         }}
-                        onMouseEnter={() => setHoveredCell({ task, model })}
-                        onMouseLeave={() => setHoveredCell(null)}
+                        onMouseEnter={(e) => cell && handleMouseEnter(e, cell)}
+                        onMouseLeave={handleMouseLeave}
                       >
                         <span className="text-xs font-mono font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
                           {score != null ? score.toFixed(2) : '—'}
                         </span>
-                        {isHovered && cell && (
-                          <div className={`absolute z-50 left-1/2 -translate-x-1/2 pointer-events-none ${showBelow ? 'top-full mt-2' : 'bottom-full mb-2'}`}>
-                            <HeatmapTooltip payload={[{ payload: cell }]} />
-                          </div>
-                        )}
                       </div>
                     </td>
                   )
@@ -147,6 +150,16 @@ export default function CapabilityMatrix() {
           <span>1.0</span>
         </div>
       </div>
+
+      {/* Fixed-position tooltip rendered outside the table flow */}
+      {tooltip && (
+        <div
+          className="fixed z-[9999] pointer-events-none"
+          style={{ top: tooltip.top, left: tooltip.left }}
+        >
+          <TooltipContent data={tooltip.cell} />
+        </div>
+      )}
     </div>
   )
 }
