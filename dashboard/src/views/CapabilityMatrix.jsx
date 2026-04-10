@@ -18,14 +18,14 @@ function HeatmapTooltip({ payload }) {
   const data = payload[0]?.payload
   if (!data) return null
   return (
-    <div className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 shadow-xl text-sm">
+    <div className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 shadow-xl text-sm min-w-max">
       <p className="font-semibold text-white mb-1">{data.model} / {data.task}</p>
       <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-gray-300">
         <span>Score:</span>
         <span className="text-right font-mono">{data.score?.toFixed(3) ?? 'N/A'}</span>
         <span>Confidence:</span>
         <span className="text-right font-mono">{data.confidence?.toFixed(3) ?? 'N/A'}</span>
-        <span>Calibration R:</span>
+        <span>Cal R:</span>
         <span className="text-right font-mono">{data.calibration_r?.toFixed(3) ?? 'N/A'}</span>
         <span>Latency:</span>
         <span className="text-right font-mono">{data.latency != null ? `${data.latency.toFixed(0)}ms` : 'N/A'}</span>
@@ -123,7 +123,7 @@ export default function CapabilityMatrix() {
                           {score != null ? score.toFixed(2) : '—'}
                         </span>
                         {isHovered && cell && (
-                          <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 pointer-events-none">
+                          <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 pointer-events-none">
                             <HeatmapTooltip payload={[{ payload: cell }]} />
                           </div>
                         )}
