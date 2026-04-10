@@ -170,6 +170,102 @@ def rate_limit(max_calls, period):
 ''',
         "reference": "A decorator factory that enforces a rate limit on function calls within a sliding time window.",
     },
+    # --- 5 additional hard examples ---
+    {
+        "complexity": "hard",
+        "code": '''\
+def retry(fn, mx=3, bk=1.0):
+    import time
+    for i in range(mx):
+        try:
+            return fn()
+        except Exception:
+            if i == mx - 1:
+                raise
+            time.sleep(bk * (2 ** i))
+''',
+        "reference": "Retries a callable up to a maximum number of times with exponential backoff between attempts.",
+    },
+    {
+        "complexity": "hard",
+        "code": '''\
+def dtw(s, t):
+    n, m = len(s), len(t)
+    dp = [[float("inf")] * (m + 1) for _ in range(n + 1)]
+    dp[0][0] = 0
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            cost = abs(s[i-1] - t[j-1])
+            dp[i][j] = cost + min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1])
+    return dp[n][m]
+''',
+        "reference": "Computes the dynamic time warping distance between two numeric sequences.",
+    },
+    {
+        "complexity": "hard",
+        "code": '''\
+class RB:
+    def __init__(self, cap):
+        self._b = [None] * cap
+        self._h = 0
+        self._t = 0
+        self._n = 0
+        self._c = cap
+
+    def push(self, v):
+        if self._n == self._c:
+            raise OverflowError
+        self._b[self._t] = v
+        self._t = (self._t + 1) % self._c
+        self._n += 1
+
+    def pop(self):
+        if self._n == 0:
+            raise IndexError
+        v = self._b[self._h]
+        self._h = (self._h + 1) % self._c
+        self._n -= 1
+        return v
+''',
+        "reference": "Implements a fixed-capacity circular ring buffer with push and pop operations.",
+    },
+    {
+        "complexity": "hard",
+        "code": '''\
+def par(tks):
+    stk = []
+    for t in tks:
+        if t == "(":
+            stk.append([])
+        elif t == ")":
+            inner = stk.pop()
+            if stk:
+                stk[-1].append(inner)
+            else:
+                return inner
+        else:
+            if stk:
+                stk[-1].append(t)
+    return stk[0] if stk else []
+''',
+        "reference": "Parses a flat list of tokens with parentheses into a nested list structure.",
+    },
+    {
+        "complexity": "hard",
+        "code": '''\
+def crc32(data: bytes) -> int:
+    crc = 0xFFFFFFFF
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            if crc & 1:
+                crc = (crc >> 1) ^ 0xEDB88320
+            else:
+                crc >>= 1
+    return crc ^ 0xFFFFFFFF
+''',
+        "reference": "Computes a CRC-32 checksum for a bytes object using the standard polynomial.",
+    },
 ]
 
 

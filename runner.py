@@ -16,13 +16,15 @@ import re
 import sys
 import time
 import traceback
-from typing import Iterable
+from collections import defaultdict
+from typing import Any, Iterable
 
 from models.anthropic_adapter import ClaudeHaiku
 from models.base import Model
 from models.gemini_adapter import GeminiFlash
 from models.gemini_pro_adapter import GeminiPro
 from models.openai_adapter import GPT4oMini
+from results.bq_writer import write_rows
 from tasks.base import Task
 from tasks.code_review import CodeReview
 from tasks.code_summarization import CodeSummarization
@@ -85,15 +87,20 @@ def _pearson(xs: list[float], ys: list[float]) -> float | None:
     return cov / (sx * sy)
 
 
-def run(tasks: Iterable[Task], models: Iterable[Model]) -> None:
+def run(tasks: Iterable[Task], models: Iterable[Model]) -> list[dict[str, Any]]:
+    all_rows: list[dict[str, Any]] = []
+
     for task in tasks:
         examples = task.examples()
         for model in models:
             scores: list[float] = []
             confidences: list[float] = []
             latencies_ms: list[float] = []
+            # Per-difficulty buckets for calibration breakdown.
+            diff_buckets: dict[str, list[tuple[float, float]]] = defaultdict(list)
 
             for idx, example in enumerate(examples):
+                difficulty = example.get("complexity", "unknown")
                 prompt = task.prompt(example)
                 t0 = time.perf_counter()
                 error = None
@@ -129,21 +136,25 @@ def run(tasks: Iterable[Task], models: Iterable[Model]) -> None:
                         _debug(f"  CONFIDENCE ERROR: {exc}")
 
                 _debug(
-                    f"\n--- {task.name} | {model.name} | example {idx} ---\n"
+                    f"\n--- {task.name} | {model.name} | example {idx} [{difficulty}] ---\n"
                     f"PROMPT:\n{prompt}\n\n"
                     f"OUTPUT:\n{output}\n"
                     f"SCORE: {score}  CONFIDENCE: {confidence_score}  ERROR: {error}"
                 )
 
+                conf_float = float(confidence_score) if confidence_score is not None else float("nan")
                 scores.append(score)
-                confidences.append(float(confidence_score) if confidence_score is not None else float("nan"))
+                confidences.append(conf_float)
                 latencies_ms.append(latency_ms)
 
-                _emit({
+                if not math.isnan(conf_float):
+                    diff_buckets[difficulty].append((conf_float, score))
+
+                row = {
                     "event": "call",
                     "task": task.name,
                     "family": task.family,
-                    "complexity": task.complexity,
+                    "difficulty": difficulty,
                     "model": model.name,
                     "tier": model.tier,
                     "example_idx": idx,
@@ -152,34 +163,46 @@ def run(tasks: Iterable[Task], models: Iterable[Model]) -> None:
                     "confidence_score": confidence_score,
                     "output": output,
                     "error": error,
-                })
+                }
+                _emit(row)
+                all_rows.append(row)
 
             mean_score = sum(scores) / len(scores) if scores else 0.0
             mean_latency = sum(latencies_ms) / len(latencies_ms) if latencies_ms else 0.0
 
-            # Filter NaN for calibration calc.
+            # Overall calibration.
             valid = [(c, s) for c, s in zip(confidences, scores) if not math.isnan(c)]
             cal_r = _pearson([c for c, _ in valid], [s for _, s in valid]) if valid else None
-
             valid_confs = [c for c, _ in valid]
             mean_conf = sum(valid_confs) / len(valid_confs) if valid_confs else None
 
-            _emit({
+            # Per-difficulty calibration.
+            cal_by_difficulty: dict[str, float | None] = {}
+            for diff in ("easy", "medium", "hard"):
+                pairs = diff_buckets.get(diff, [])
+                r = _pearson([c for c, _ in pairs], [s for _, s in pairs]) if pairs else None
+                cal_by_difficulty[diff] = round(r, 4) if r is not None else None
+
+            summary = {
                 "event": "summary",
                 "task": task.name,
                 "family": task.family,
-                "complexity": task.complexity,
                 "model": model.name,
                 "tier": model.tier,
                 "n": len(scores),
                 "mean_score": round(mean_score, 4),
                 "mean_confidence": round(mean_conf, 2) if mean_conf is not None else None,
                 "calibration_r": round(cal_r, 4) if cal_r is not None else None,
+                "calibration_by_difficulty": cal_by_difficulty,
                 "mean_latency_ms": round(mean_latency, 2),
                 "threshold": task.threshold,
                 "passes_threshold": mean_score >= task.threshold,
                 "cost_per_token": model.cost_per_token,
-            })
+            }
+            _emit(summary)
+            all_rows.append(summary)
+
+    return all_rows
 
 
 def main() -> int:
@@ -199,7 +222,18 @@ def main() -> int:
         _emit({"event": "fatal", "error": "No models could be initialised."})
         return 1
 
-    run(tasks, models)
+    rows = run(tasks, models)
+
+    # Write to BigQuery if GCP_PROJECT is set and bq is available.
+    project = os.environ.get("GCP_PROJECT")
+    if project:
+        try:
+            written = write_rows(rows, project=project)
+            _emit({"event": "bq_write", "rows_written": written})
+        except Exception as exc:  # noqa: BLE001
+            _emit({"event": "bq_write_error", "error": f"{type(exc).__name__}: {exc}"})
+            traceback.print_exc(file=sys.stderr)
+
     return 0
 
 
