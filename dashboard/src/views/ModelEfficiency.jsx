@@ -7,14 +7,13 @@ import {
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 const MODEL_COLORS = {
-  'gemini-2.0-flash-lite': '#34d399',
+  'gemini-2.5-flash-lite': '#34d399',
   'flash-lite': '#34d399',
-  'claude-3-haiku': '#fbbf24',
+  'claude-haiku-4-5': '#fbbf24',
   'haiku': '#fbbf24',
-  'gemini-2.0-flash': '#60a5fa',
+  'gemini-2.5-flash': '#60a5fa',
   'flash': '#60a5fa',
-  'claude-3.5-sonnet': '#f472b6',
-  'sonnet': '#f472b6',
+  'gpt-4o-mini': '#f472b6',
 }
 
 const FALLBACK_COLORS = ['#818cf8', '#34d399', '#fbbf24', '#f472b6', '#60a5fa', '#a78bfa', '#fb923c', '#2dd4bf']
@@ -53,14 +52,25 @@ export default function ModelEfficiency() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.json()
       })
-      .then(d => { setData(d); setLoading(false) })
+      .then(raw => {
+        // API returns {expected_cost_usd, mean_score, ...}
+        // Component expects {cost, score, ...}
+        const rows = Array.isArray(raw) ? raw : raw?.entries || []
+        const mapped = rows.map(r => ({
+          ...r,
+          cost: r.expected_cost_usd ?? r.cost,
+          score: r.mean_score ?? r.score,
+        }))
+        setData(mapped)
+        setLoading(false)
+      })
       .catch(err => { setError(err.message); setLoading(false) })
   }, [])
 
   if (loading) return <LoadingState />
   if (error) return <ErrorState message={error} />
 
-  const entries = Array.isArray(data) ? data : data?.entries || data?.cells || []
+  const entries = Array.isArray(data) ? data : []
   if (entries.length === 0) return <EmptyState />
 
   // Build efficiency data: score/cost ratio per model per task
