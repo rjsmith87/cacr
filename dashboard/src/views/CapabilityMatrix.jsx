@@ -46,7 +46,29 @@ export default function CapabilityMatrix() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.json()
       })
-      .then(data => { setMatrix(data); setLoading(false) })
+      .then(data => {
+        // API returns a flat array: [{task, model, mean_score, ...}]
+        // Transform into {tasks, models, cells} for the heatmap.
+        if (!Array.isArray(data) || data.length === 0) {
+          setError('Empty response from API')
+          setLoading(false)
+          return
+        }
+        const tasks = [...new Set(data.map(d => d.task))]
+        const models = [...new Set(data.map(d => d.model))]
+        const cells = data.map(d => ({
+          task: d.task,
+          model: d.model,
+          score: d.mean_score,
+          confidence: d.mean_confidence,
+          calibration_r: d.calibration_r,
+          latency: d.mean_latency_ms,
+          passes_threshold: d.passes_threshold,
+          tier: d.tier,
+        }))
+        setMatrix({ tasks, models, cells })
+        setLoading(false)
+      })
       .catch(err => { setError(err.message); setLoading(false) })
   }, [])
 
