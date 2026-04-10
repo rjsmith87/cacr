@@ -13,10 +13,14 @@ export default function ELI5Panel({ dataSummary, promptHint, refreshKey }) {
     setError(null)
     setExplanation(null)
 
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 25_000)
+
     fetch(`${API}/api/explain`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ data_summary: dataSummary, prompt_hint: promptHint }),
+      signal: ctrl.signal,
     })
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -27,7 +31,12 @@ export default function ELI5Panel({ dataSummary, promptHint, refreshKey }) {
         setExplanation(d.explanation)
         setLoading(false)
       })
-      .catch(err => { setError(err.message); setLoading(false) })
+      .catch(err => {
+        const msg = err.name === 'AbortError' ? 'Request timed out — try Refresh' : err.message
+        setError(msg)
+        setLoading(false)
+      })
+      .finally(() => clearTimeout(timer))
   }, [dataSummary, promptHint])
 
   useEffect(() => {

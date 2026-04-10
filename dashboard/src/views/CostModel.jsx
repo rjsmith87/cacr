@@ -6,7 +6,10 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 function fmt$(v) {
   if (v == null) return '—'
   const n = Number(v)
-  return n < 0.001 ? `$${n.toExponential(2)}` : `$${n.toFixed(6)}`
+  if (n === 0) return '$0.00'
+  // Always use fixed notation — find enough decimals to show 3 significant digits
+  const decimals = Math.max(6, -Math.floor(Math.log10(Math.abs(n))) + 2)
+  return `$${n.toFixed(Math.min(decimals, 10))}`
 }
 
 export default function CostModel() {
