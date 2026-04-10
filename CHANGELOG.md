@@ -66,3 +66,11 @@
 
 ### Documentation
 - README.md, METHODOLOGY.md, CLAUDE.md, CONTEXT.md, FINDINGS.md, CHANGELOG.md
+
+### CVE Case Study
+- 6 real CVEs as Python examples (Flask, Requests, urllib3, PyJWT)
+- 2-step CVE pipeline: detect (yes/no + severity + confidence) → explain (attack + fix)
+- 3 routing strategies tested: always_tier1, always_tier2, cacr
+- All 4 models tested on step 1 detection
+- Key finding: Gemini 2.5 Flash missed 4/6 CVEs (including 2 critical), while Flash Lite detected all 6
+- BQ writer updated with GOOGLE_APPLICATION_CREDENTIALS_JSON for Render deployment

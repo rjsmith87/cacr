@@ -1,14 +1,37 @@
 """BigQuery writer for CACR benchmark results.
 
 Creates dataset/table if they don't exist, then streams rows via the
-insertAll API. Uses application default credentials.
+insertAll API.
+
+Credential strategy (Render vs local split):
+  1. If GOOGLE_APPLICATION_CREDENTIALS_JSON is set, parse the JSON string
+     and build credentials from service_account.Credentials.  This is the
+     Render path — the SA key JSON is stored as an env var because Render
+     has no filesystem-based ADC.
+  2. Otherwise fall back to Application Default Credentials (ADC), which
+     works locally after `gcloud auth application-default login`.
 """
 
 import json
+import os
 from datetime import datetime, timezone
 from typing import Any
 
 from google.cloud import bigquery
+
+
+def _build_bq_client(project: str) -> bigquery.Client:
+    creds_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+    if creds_json:
+        # Render path: SA key JSON stored in env var
+        from google.oauth2 import service_account
+        info = json.loads(creds_json)
+        creds = service_account.Credentials.from_service_account_info(
+            info, scopes=["https://www.googleapis.com/auth/bigquery"],
+        )
+        return bigquery.Client(project=project, credentials=creds)
+    # Local path: ADC (gcloud auth application-default login)
+    return bigquery.Client(project=project)
 
 DATASET = "cacr_results"
 TABLE_CALLS = "benchmark_calls"
@@ -67,7 +90,7 @@ def write_rows(
     dataset: str = DATASET,
 ) -> int:
     """Write call + summary rows to BigQuery. Returns total rows written."""
-    client = bigquery.Client(project=project)
+    client = _build_bq_client(project)
 
     dataset_ref = bigquery.DatasetReference(project, dataset)
     ds = bigquery.Dataset(dataset_ref)

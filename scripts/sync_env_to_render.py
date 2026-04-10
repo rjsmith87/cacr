@@ -21,7 +21,7 @@ RENDER_API = "https://api.render.com/v1"
 
 # Keys to sync per service
 API_KEYS = ["GCP_PROJECT", "GOOGLE_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY",
-            "GOOGLE_APPLICATION_CREDENTIALS"]
+            "GOOGLE_APPLICATION_CREDENTIALS_JSON"]
 DASHBOARD_KEYS = ["VITE_API_URL"]
 
 

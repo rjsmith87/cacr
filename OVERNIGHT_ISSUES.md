@@ -32,14 +32,10 @@
 **Details**: Flash Lite is cost-optimal on all 3 tasks, so the logistic regression just predicts Flash Lite regardless of features.
 **Fix**: Add tasks or models where Flash Lite fails threshold to create meaningful routing decisions.
 
-### 4. Render deployment: GCP ADC won't work
-**Severity**: Medium — blocks production deployment
-**Details**: The Flask API uses BigQuery via ADC (application default credentials). On Render, there's no `gcloud auth` — need a service account JSON. But the GCP org policy (`constraints/iam.disableServiceAccountKeyCreation`) blocks SA key creation.
-**Proposed solutions**:
-  1. Ask GCP org admin to create an exception for the CACR service account
-  2. Use Workload Identity Federation with Render's OIDC provider
-  3. Export BQ data to a static JSON file served by the API (no live BQ queries)
-  4. Switch to a GCP-hosted backend (Cloud Run) where ADC works natively
+### 4. Render deployment: GCP ADC won't work — RESOLVED
+**Severity**: Resolved
+**Details**: bq_writer.py now checks `GOOGLE_APPLICATION_CREDENTIALS_JSON` env var first (parses JSON string, builds `service_account.Credentials`), falls back to ADC for local dev.
+**Remaining step**: Create a service account key in a personal GCP project (outside org policy) with `bigquery.dataEditor` + `bigquery.user` roles, then add the key JSON as `GOOGLE_APPLICATION_CREDENTIALS_JSON` in Render env vars. Use `scripts/sync_env_to_render.py` to push it.
 
 ### 5. Calibration metric has high variance at 10 examples/difficulty
 **Severity**: Low — expected with small samples
