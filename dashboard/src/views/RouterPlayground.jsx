@@ -23,7 +23,12 @@ export default function RouterPlayground() {
       const res = await fetch(`${API}/api/route`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          prompt: form.code_snippet,
+          task_family: form.task_family,
+          complexity: form.complexity,
+          pipeline_position: form.pipeline_position,
+        }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
@@ -127,20 +132,21 @@ export default function RouterPlayground() {
                 <p className="text-xl font-bold text-indigo-400 mt-0.5">{result.recommended_model || result.model || '—'}</p>
               </div>
 
-              {/* Confidence bar */}
-              {(result.confidence != null || result.confidence_score != null) && (
+              {/* Confidence interval bar */}
+              {result.confidence_interval && (
                 <div>
                   <div className="flex justify-between items-baseline mb-1.5">
-                    <span className="text-xs uppercase tracking-wider text-gray-500 font-medium">Confidence</span>
+                    <span className="text-xs uppercase tracking-wider text-gray-500 font-medium">Confidence Interval</span>
                     <span className="text-sm font-mono text-gray-300">
-                      {((result.confidence ?? result.confidence_score ?? 0) * 100).toFixed(1)}%
+                      {(result.confidence_interval[0] * 100).toFixed(0)}% – {(result.confidence_interval[1] * 100).toFixed(0)}%
                     </span>
                   </div>
-                  <div className="w-full bg-gray-800 rounded-full h-3 overflow-hidden">
+                  <div className="relative w-full bg-gray-800 rounded-full h-3 overflow-hidden">
                     <div
-                      className="h-full rounded-full transition-all duration-500"
+                      className="absolute h-full rounded-full transition-all duration-500"
                       style={{
-                        width: `${Math.min(100, (result.confidence ?? result.confidence_score ?? 0) * 100)}%`,
+                        left: `${result.confidence_interval[0] * 100}%`,
+                        width: `${(result.confidence_interval[1] - result.confidence_interval[0]) * 100}%`,
                         background: `linear-gradient(90deg, #6366f1, #818cf8)`,
                       }}
                     />
