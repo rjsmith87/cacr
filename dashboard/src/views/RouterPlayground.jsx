@@ -6,7 +6,7 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 export default function RouterPlayground() {
   const [form, setForm] = useState({
     code_snippet: '',
-    task_family: 'classification',
+    task: 'CodeReview',
     complexity: 'easy',
     pipeline_position: 1,
   })
@@ -25,7 +25,7 @@ export default function RouterPlayground() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: form.code_snippet,
-          task_family: form.task_family,
+          task: form.task,
           complexity: form.complexity,
           pipeline_position: form.pipeline_position,
         }),
@@ -65,14 +65,15 @@ export default function RouterPlayground() {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1.5">Task Family</label>
+              <label className="block text-sm font-medium text-gray-300 mb-1.5">Task</label>
               <select
-                value={form.task_family}
-                onChange={(e) => updateField('task_family', e.target.value)}
+                value={form.task}
+                onChange={(e) => updateField('task', e.target.value)}
                 className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30"
               >
-                <option value="classification">Classification</option>
-                <option value="generation">Generation</option>
+                <option value="CodeReview">Code Review</option>
+                <option value="SecurityVuln">Security Vuln</option>
+                <option value="CodeSummarization">Code Summarization</option>
               </select>
             </div>
             <div>

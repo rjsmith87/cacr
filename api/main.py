@@ -175,17 +175,14 @@ def route_prompt():
     if not data or "prompt" not in data:
         abort(400, "Missing 'prompt' in request body")
 
-    from router.policy import CACRRouter
+    from router.policy import LookupTableRouter
 
-    router = CACRRouter()
-    router.load()
-    decision = router.route(
-        data["prompt"],
-        task_family=data.get("task_family", "classification"),
-        complexity=data.get("complexity", "medium"),
-        pipeline_position=data.get("pipeline_position", 1),
-        upstream_confidence=data.get("upstream_confidence", 0.8),
-    )
+    # Use LookupTableRouter which reads cost_matrix.csv — real benchmark data.
+    # Accepts 'task' (e.g. "CodeReview") to look up directly in the matrix.
+    router = LookupTableRouter()
+    task = data.get("task", "CodeReview")
+    decision = router.route(task)
+
     return jsonify({
         "recommended_model": decision.recommended_model,
         "expected_cost": decision.expected_cost,
