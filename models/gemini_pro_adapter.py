@@ -1,7 +1,8 @@
-"""Gemini 2.5 Pro adapter via google-genai SDK.
+"""Gemini 2.5 Flash Lite adapter via google-genai SDK.
 
+The cheapest/fastest Gemini model — true tier 1 small model.
 Uses GOOGLE_API_KEY for the direct Gemini API (not Vertex AI).
-Retries on transient 503 / 429 errors.
+Retries on transient 503 / 429 errors with exponential backoff.
 """
 
 import os
@@ -11,19 +12,20 @@ from google import genai
 from google.genai import errors as genai_errors
 
 from models.base import Model
+from models.gemini_adapter import _extract_retry_delay
 
-_MAX_RETRIES = 3
-_RETRY_BACKOFF = 2.0  # seconds, doubled each attempt
+_MAX_RETRIES = 5
+_BASE_DELAY = 4.0
 
 
-class GeminiPro(Model):
-    name = "gemini-2.5-pro"
-    tier = 3
-    cost_per_token = 3.5e-6  # USD per input token
+class GeminiFlashLite(Model):
+    name = "gemini-2.5-flash-lite"
+    tier = 1
+    cost_per_token = 4e-8  # USD per input token
 
     def __init__(
         self,
-        model_id: str = "gemini-2.5-pro",
+        model_id: str = "gemini-2.5-flash-lite",
         max_tokens: int = 256,
         temperature: float = 0.0,
         api_key: str | None = None,
@@ -54,7 +56,9 @@ class GeminiPro(Model):
                 code = getattr(exc, "status_code", 0) or 0
                 if code in (429, 503):
                     last_exc = exc
-                    time.sleep(_RETRY_BACKOFF * (2 ** attempt))
+                    hint = _extract_retry_delay(exc)
+                    delay = hint if hint else _BASE_DELAY * (2 ** attempt)
+                    time.sleep(delay)
                     continue
                 raise
         raise last_exc  # type: ignore[misc]

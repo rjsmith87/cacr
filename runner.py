@@ -22,7 +22,7 @@ from typing import Any, Iterable
 from models.anthropic_adapter import ClaudeHaiku
 from models.base import Model
 from models.gemini_adapter import GeminiFlash
-from models.gemini_pro_adapter import GeminiPro
+from models.gemini_pro_adapter import GeminiFlashLite
 from models.openai_adapter import GPT4oMini
 from results.bq_writer import write_rows
 from tasks.base import Task
@@ -211,7 +211,7 @@ def main() -> int:
     tasks: list[Task] = [CodeReview(), SecurityVuln(), CodeSummarization()]
 
     models: list[Model] = []
-    for cls in [ClaudeHaiku, GeminiFlash, GeminiPro, GPT4oMini]:
+    for cls in [ClaudeHaiku, GeminiFlash, GeminiFlashLite, GPT4oMini]:
         try:
             models.append(cls())
         except Exception as exc:  # noqa: BLE001

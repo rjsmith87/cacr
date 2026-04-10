@@ -1,2 +1,8 @@
 venv/
 .env
+__pycache__/
+*.pyc
+*.pkl
+node_modules/
+dashboard/dist/
+cacr-bq-writer-key.json

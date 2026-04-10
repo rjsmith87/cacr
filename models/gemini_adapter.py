@@ -1,10 +1,11 @@
 """Gemini 2.5 Flash adapter via google-genai SDK.
 
 Uses GOOGLE_API_KEY for the direct Gemini API (not Vertex AI).
-Retries on transient 503 / 429 errors.
+Retries on transient 503 / 429 errors with exponential backoff.
 """
 
 import os
+import re
 import time
 
 from google import genai
@@ -12,8 +13,15 @@ from google.genai import errors as genai_errors
 
 from models.base import Model
 
-_MAX_RETRIES = 3
-_RETRY_BACKOFF = 2.0  # seconds, doubled each attempt
+_MAX_RETRIES = 5
+_BASE_DELAY = 4.0  # seconds; doubles each attempt → 4, 8, 16, 32, 64
+
+
+def _extract_retry_delay(exc: Exception) -> float | None:
+    """Try to parse a 'retryDelay' hint from a Gemini error message."""
+    msg = str(exc)
+    m = re.search(r"retry(?:Delay)?[\"']?\s*[:=]\s*[\"']?(\d+)", msg, re.IGNORECASE)
+    return float(m.group(1)) if m else None
 
 
 class GeminiFlash(Model):
@@ -54,7 +62,9 @@ class GeminiFlash(Model):
                 code = getattr(exc, "status_code", 0) or 0
                 if code in (429, 503):
                     last_exc = exc
-                    time.sleep(_RETRY_BACKOFF * (2 ** attempt))
+                    hint = _extract_retry_delay(exc)
+                    delay = hint if hint else _BASE_DELAY * (2 ** attempt)
+                    time.sleep(delay)
                     continue
                 raise
         raise last_exc  # type: ignore[misc]
