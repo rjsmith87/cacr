@@ -1,4 +1,4 @@
-.PHONY: benchmark benchmark-quick benchmark-pipeline sync-env deploy results dashboard-dev api-dev all
+.PHONY: benchmark benchmark-quick benchmark-pipeline sync-env deploy results dashboard-dev api-dev test-ui all
 
 VENV := ./venv/bin
 PYTHON := $(VENV)/python
@@ -30,5 +30,8 @@ dashboard-dev:
 
 api-dev:
 	$(VENV)/gunicorn api.main:app --reload --bind 0.0.0.0:8000
+
+test-ui:
+	cd dashboard && TEST_URL=https://cacr-dashboard.onrender.com npx playwright test
 
 all: benchmark api-dev
