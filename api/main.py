@@ -205,5 +205,66 @@ def findings():
         return jsonify({"content": f.read()})
 
 
+# ── POST /api/explain-calibration ──────────────────────────────────
+
+@app.route("/api/explain-calibration", methods=["POST"])
+def explain_calibration():
+    """Send calibration data to Claude for a plain-English explanation."""
+    data = request.get_json(force=True)
+    cal_data = data.get("calibration_data")
+    if not cal_data:
+        abort(400, "Missing 'calibration_data' in request body")
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY not configured"}), 500
+
+    from anthropic import Anthropic
+
+    # Summarize the raw data so the prompt isn't huge
+    by_model = {}
+    for row in cal_data:
+        m = row.get("model", "unknown")
+        by_model.setdefault(m, []).append(row)
+
+    summary_lines = []
+    for model, rows in by_model.items():
+        confs = [r["confidence_score"] for r in rows if r.get("confidence_score") is not None]
+        scores = [r["score"] for r in rows if r.get("score") is not None]
+        n = len(rows)
+        mean_conf = sum(confs) / len(confs) if confs else 0
+        mean_score = sum(scores) / len(scores) if scores else 0
+        summary_lines.append(
+            f"{model}: {n} data points, mean confidence={mean_conf:.1f}/10, "
+            f"mean accuracy={mean_score:.3f}"
+        )
+    summary = "\n".join(summary_lines)
+
+    prompt = (
+        "You are explaining a calibration scatter plot to a non-technical engineer. "
+        f"Here is the calibration data:\n\n{summary}\n\n"
+        "In 3-4 sentences, explain what this chart shows, which model is best "
+        "calibrated, which is worst, and what that means in plain English for "
+        "someone running an AI pipeline in production. Be direct and specific — "
+        "use the actual model names and numbers."
+    )
+
+    try:
+        client = Anthropic(api_key=api_key)
+        # Stream the response
+        text_parts = []
+        with client.messages.stream(
+            model="claude-sonnet-4-20250514",
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}],
+        ) as stream:
+            for text in stream.text_stream:
+                text_parts.append(text)
+
+        return jsonify({"explanation": "".join(text_parts)})
+    except Exception as exc:
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=8000)
