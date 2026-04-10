@@ -1,0 +1,13 @@
+task,model,tier,mean_score,cost_per_token,expected_cost_usd,score_cost_ratio,calibration_r,mean_latency_ms,passes_threshold,is_cost_optimal
+CodeReview,claude-haiku-4-5,1,0.9,1e-06,0.000276,0.0,-0.1065,673.57,True,False
+CodeReview,gemini-2.5-flash,1,0.2,1e-07,0.0005566,0.0,,1378.63,False,False
+CodeReview,gemini-2.5-flash-lite,1,0.9,4e-08,7.728e-05,0.01,-0.1825,666.9,True,True
+CodeReview,gpt-4o-mini,2,0.8,1.5e-07,0.0001656,0.0,-0.0119,592.56,True,False
+SecurityVuln,claude-haiku-4-5,1,1.0,1e-06,0.00023,0.0,,704.79,True,False
+SecurityVuln,gemini-2.5-flash,1,0.6667,1e-07,0.0002453111,0.0,,2488.55,True,False
+SecurityVuln,gemini-2.5-flash-lite,1,0.9333,4e-08,5.46094e-05,0.02,-0.066,455.73,True,True
+SecurityVuln,gpt-4o-mini,2,0.9333,1.5e-07,7.82218e-05,0.01,0.7018,578.63,True,False
+CodeSummarization,claude-haiku-4-5,1,0.3779,1e-06,0.000516166,0.0,0.1887,968.66,False,False
+CodeSummarization,gemini-2.5-flash,1,0.2911,1e-07,0.0004958363,0.0,0.4222,1885.1,False,False
+CodeSummarization,gemini-2.5-flash-lite,1,0.4194,4e-08,0.0004044725,0.0,,822.56,True,True
+CodeSummarization,gpt-4o-mini,2,0.3955,1.5e-07,0.0004307497,0.0,0.1053,945.64,False,False

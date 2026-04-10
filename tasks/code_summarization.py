@@ -44,14 +44,14 @@ def rouge_l(hypothesis: str, reference: str) -> float:
 
 
 EXAMPLES = [
-    # --- easy ---
+    # ---- easy (10) ----
     {
         "complexity": "easy",
         "code": '''\
 def add(a, b):
     return a + b
 ''',
-        "reference": "Returns the sum of two numbers.",
+        "reference": "Returns the arithmetic sum of two given numbers.",
     },
     {
         "complexity": "easy",
@@ -59,7 +59,7 @@ def add(a, b):
 def is_empty(lst):
     return len(lst) == 0
 ''',
-        "reference": "Checks whether a list is empty.",
+        "reference": "Checks whether a given list contains no elements.",
     },
     {
         "complexity": "easy",
@@ -67,9 +67,65 @@ def is_empty(lst):
 def to_upper(s):
     return s.upper()
 ''',
-        "reference": "Converts a string to uppercase.",
+        "reference": "Converts all characters in a string to uppercase.",
     },
-    # --- medium ---
+    {
+        "complexity": "easy",
+        "code": '''\
+def max_of_three(a, b, c):
+    return max(a, b, c)
+''',
+        "reference": "Returns the maximum value among three given inputs.",
+    },
+    {
+        "complexity": "easy",
+        "code": '''\
+def square(n):
+    return n * n
+''',
+        "reference": "Returns the square of a given number by multiplication.",
+    },
+    {
+        "complexity": "easy",
+        "code": '''\
+def greet(name):
+    return f"Hello, {name}!"
+''',
+        "reference": "Returns a greeting string for the given name.",
+    },
+    {
+        "complexity": "easy",
+        "code": '''\
+def is_even(n):
+    return n % 2 == 0
+''',
+        "reference": "Checks whether a given integer is an even number.",
+    },
+    {
+        "complexity": "easy",
+        "code": '''\
+def first_element(lst):
+    return lst[0]
+''',
+        "reference": "Returns the first element of a given list.",
+    },
+    {
+        "complexity": "easy",
+        "code": '''\
+def reverse_string(s):
+    return s[::-1]
+''',
+        "reference": "Returns a new string with characters in reverse order.",
+    },
+    {
+        "complexity": "easy",
+        "code": '''\
+def absolute(n):
+    return n if n >= 0 else -n
+''',
+        "reference": "Returns the absolute value of a given number.",
+    },
+    # ---- medium (10) ----
     {
         "complexity": "medium",
         "code": '''\
@@ -81,7 +137,7 @@ def fibonacci(n):
         a, b = b, a + b
     return b
 ''',
-        "reference": "Computes the nth Fibonacci number iteratively.",
+        "reference": "Computes the nth Fibonacci number using an iterative approach.",
     },
     {
         "complexity": "medium",
@@ -108,7 +164,48 @@ def memoize(func):
         return cache[args]
     return wrapper
 ''',
-        "reference": "A decorator that caches function results based on arguments.",
+        "reference": "Decorator that caches function results based on arguments.",
+    },
+    {
+        "complexity": "medium",
+        "code": '''\
+def binary_search(arr, target):
+    lo, hi = 0, len(arr) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if arr[mid] == target:
+            return mid
+        elif arr[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1
+''',
+        "reference": "Performs binary search on a sorted list and returns the index.",
+    },
+    {
+        "complexity": "medium",
+        "code": '''\
+def merge_sort(lst):
+    if len(lst) <= 1:
+        return lst
+    mid = len(lst) // 2
+    left = merge_sort(lst[:mid])
+    right = merge_sort(lst[mid:])
+    merged = []
+    i = j = 0
+    while i < len(left) and j < len(right):
+        if left[i] <= right[j]:
+            merged.append(left[i])
+            i += 1
+        else:
+            merged.append(right[j])
+            j += 1
+    merged.extend(left[i:])
+    merged.extend(right[j:])
+    return merged
+''',
+        "reference": "Sorts a list using the merge sort algorithm.",
     },
     {
         "complexity": "medium",
@@ -118,89 +215,65 @@ def chunk(lst, size):
 ''',
         "reference": "Splits a list into chunks of a given size.",
     },
-    # --- hard ---
     {
-        "complexity": "hard",
+        "complexity": "medium",
         "code": '''\
-def lru_evict(cache, capacity):
-    if len(cache) <= capacity:
-        return cache
-    sorted_keys = sorted(cache, key=lambda k: cache[k]["last_access"])
-    while len(cache) > capacity:
-        del cache[sorted_keys.pop(0)]
-    return cache
+def unique(lst):
+    seen = set()
+    result = []
+    for item in lst:
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
 ''',
-        "reference": "Evicts the least recently used entries from a cache dict until it is within capacity.",
+        "reference": "Returns a list with duplicates removed preserving order.",
     },
     {
-        "complexity": "hard",
+        "complexity": "medium",
         "code": '''\
-def topological_sort(graph):
-    visited = set()
-    stack = []
-    def dfs(node):
-        visited.add(node)
-        for neighbor in graph.get(node, []):
-            if neighbor not in visited:
-                dfs(neighbor)
-        stack.append(node)
-    for node in graph:
-        if node not in visited:
-            dfs(node)
-    return stack[::-1]
+def transpose(matrix):
+    if not matrix:
+        return []
+    rows, cols = len(matrix), len(matrix[0])
+    result = []
+    for c in range(cols):
+        row = []
+        for r in range(rows):
+            row.append(matrix[r][c])
+        result.append(row)
+    return result
 ''',
-        "reference": "Performs a topological sort on a directed acyclic graph using depth-first search.",
+        "reference": "Transposes a two-dimensional matrix swapping rows and columns.",
     },
     {
-        "complexity": "hard",
+        "complexity": "medium",
         "code": '''\
-def rate_limit(max_calls, period):
-    timestamps = []
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            import time
-            now = time.time()
-            timestamps[:] = [t for t in timestamps if now - t < period]
-            if len(timestamps) >= max_calls:
-                raise RuntimeError("Rate limit exceeded")
-            timestamps.append(now)
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
+def count_words(text):
+    counts = {}
+    for word in text.lower().split():
+        word = word.strip(".,!?;:")
+        counts[word] = counts.get(word, 0) + 1
+    return counts
 ''',
-        "reference": "A decorator factory that enforces a rate limit on function calls within a sliding time window.",
-    },
-    # --- 5 additional hard examples ---
-    {
-        "complexity": "hard",
-        "code": '''\
-def retry(fn, mx=3, bk=1.0):
-    import time
-    for i in range(mx):
-        try:
-            return fn()
-        except Exception:
-            if i == mx - 1:
-                raise
-            time.sleep(bk * (2 ** i))
-''',
-        "reference": "Retries a callable up to a maximum number of times with exponential backoff between attempts.",
+        "reference": "Counts the frequency of each word in a text string.",
     },
     {
-        "complexity": "hard",
+        "complexity": "medium",
         "code": '''\
-def dtw(s, t):
-    n, m = len(s), len(t)
-    dp = [[float("inf")] * (m + 1) for _ in range(n + 1)]
-    dp[0][0] = 0
-    for i in range(1, n + 1):
-        for j in range(1, m + 1):
-            cost = abs(s[i-1] - t[j-1])
-            dp[i][j] = cost + min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1])
-    return dp[n][m]
+def is_palindrome(s):
+    cleaned = ''.join(c.lower() for c in s if c.isalnum())
+    left, right = 0, len(cleaned) - 1
+    while left < right:
+        if cleaned[left] != cleaned[right]:
+            return False
+        left += 1
+        right -= 1
+    return True
 ''',
-        "reference": "Computes the dynamic time warping distance between two numeric sequences.",
+        "reference": "Checks whether a string is a palindrome ignoring case and punctuation.",
     },
+    # ---- hard (10) ----
     {
         "complexity": "hard",
         "code": '''\
@@ -248,7 +321,7 @@ def par(tks):
                 stk[-1].append(t)
     return stk[0] if stk else []
 ''',
-        "reference": "Parses a flat list of tokens with parentheses into a nested list structure.",
+        "reference": "Parses a flat list of tokens with parentheses into a nested structure.",
     },
     {
         "complexity": "hard",
@@ -265,6 +338,138 @@ def crc32(data: bytes) -> int:
     return crc ^ 0xFFFFFFFF
 ''',
         "reference": "Computes a CRC-32 checksum for a bytes object using the standard polynomial.",
+    },
+    {
+        "complexity": "hard",
+        "code": '''\
+def dtw(s, t):
+    n, m = len(s), len(t)
+    dp = [[float("inf")] * (m + 1) for _ in range(n + 1)]
+    dp[0][0] = 0
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            cost = abs(s[i-1] - t[j-1])
+            dp[i][j] = cost + min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1])
+    return dp[n][m]
+''',
+        "reference": "Computes the dynamic time warping distance between two numeric sequences.",
+    },
+    {
+        "complexity": "hard",
+        "code": '''\
+def topo(g):
+    v = set()
+    stk = []
+    def _d(n):
+        v.add(n)
+        for nb in g.get(n, []):
+            if nb not in v:
+                _d(nb)
+        stk.append(n)
+    for n in g:
+        if n not in v:
+            _d(n)
+    return stk[::-1]
+''',
+        "reference": "Performs topological sort on a directed acyclic graph using depth-first search.",
+    },
+    {
+        "complexity": "hard",
+        "code": '''\
+def lru(cap):
+    from collections import OrderedDict
+    c = OrderedDict()
+    def get(k):
+        if k not in c:
+            return -1
+        c.move_to_end(k)
+        return c[k]
+    def put(k, v):
+        if k in c:
+            c.move_to_end(k)
+        c[k] = v
+        if len(c) > cap:
+            c.popitem(last=False)
+    return get, put
+''',
+        "reference": "Implements an LRU cache with get and put operations using ordered dict.",
+    },
+    {
+        "complexity": "hard",
+        "code": '''\
+def ed(a, b):
+    m, n = len(a), len(b)
+    dp = [[0] * (n + 1) for _ in range(m + 1)]
+    for i in range(m + 1):
+        dp[i][0] = i
+    for j in range(n + 1):
+        dp[0][j] = j
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if a[i-1] == b[j-1]:
+                dp[i][j] = dp[i-1][j-1]
+            else:
+                dp[i][j] = 1 + min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1])
+    return dp[m][n]
+''',
+        "reference": "Computes the edit distance between two strings using dynamic programming.",
+    },
+    {
+        "complexity": "hard",
+        "code": '''\
+def dij(g, src):
+    import heapq
+    d = {src: 0}
+    pq = [(0, src)]
+    vis = set()
+    while pq:
+        cd, u = heapq.heappop(pq)
+        if u in vis:
+            continue
+        vis.add(u)
+        for v, w in g.get(u, []):
+            nd = cd + w
+            if nd < d.get(v, float('inf')):
+                d[v] = nd
+                heapq.heappush(pq, (nd, v))
+    return d
+''',
+        "reference": "Finds shortest paths from a source node using Dijkstra's algorithm.",
+    },
+    {
+        "complexity": "hard",
+        "code": '''\
+def ks(W, wt, vl):
+    n = len(wt)
+    dp = [[0] * (W + 1) for _ in range(n + 1)]
+    for i in range(1, n + 1):
+        for w in range(W + 1):
+            if wt[i-1] <= w:
+                dp[i][w] = max(dp[i-1][w], dp[i-1][w - wt[i-1]] + vl[i-1])
+            else:
+                dp[i][w] = dp[i-1][w]
+    return dp[n][W]
+''',
+        "reference": "Solves the 0-1 knapsack problem using dynamic programming.",
+    },
+    {
+        "complexity": "hard",
+        "code": '''\
+def conv(sg, k):
+    ks = len(k)
+    n = len(sg)
+    out = [0.0] * n
+    hk = ks // 2
+    for i in range(n):
+        acc = 0.0
+        for j in range(ks):
+            idx = i - hk + j
+            if 0 <= idx < n:
+                acc += sg[idx] * k[j]
+        out[i] = acc
+    return out
+''',
+        "reference": "Applies a one-dimensional convolution of a signal with a kernel.",
     },
 ]
 
