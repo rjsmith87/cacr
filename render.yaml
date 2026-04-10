@@ -23,6 +23,10 @@ services:
     plan: free
     buildCommand: cd dashboard && npm install && npm run build
     staticPublishPath: dashboard/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
     headers:
       - path: /*
         name: Cache-Control
