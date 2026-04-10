@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: cacr-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements-api.txt
+    startCommand: gunicorn api.main:app --bind 0.0.0.0:$PORT --workers 2
+    envVars:
+      - key: GCP_PROJECT
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        sync: false
+
+  - type: web
+    name: cacr-dashboard
+    runtime: static
+    plan: free
+    buildCommand: cd dashboard && npm install && npm run build
+    staticPublishPath: dashboard/dist
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=3600
+    envVars:
+      - key: VITE_API_URL
+        sync: false

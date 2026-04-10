@@ -1,0 +1,68 @@
+# Changelog
+
+## 2026-04-09
+
+### Initial Framework
+- Task ABC (prompt, eval, threshold, family, complexity) and Model ABC (generate, tier, cost_per_token)
+- IntentClassification task (5 categories, 10 examples) and JsonExtraction task (schema validation, 5 examples)
+- Claude Haiku adapter via Anthropic SDK
+- Runner: tasks × models loop with timing, JSONL stdout output
+
+### Multi-Model Support
+- Added Gemini Flash adapter (google-genai SDK, direct API)
+- Added Gemini Pro adapter (later replaced)
+- Added GPT-4o-mini adapter (OpenAI SDK)
+- Runner: graceful per-model init errors, continues with available models
+
+### Confidence Calibration
+- Self-reported confidence scoring (1-10) via second model call per example
+- Pearson correlation (calibration_r) between confidence and eval scores
+- Per-difficulty calibration breakdown (easy/medium/hard)
+
+### Code & Security Tasks
+- Replaced customer service tasks with CodeReview, SecurityVuln, CodeSummarization
+- 15 examples per task with mixed difficulty levels
+
+### Gemini Debugging & Flash Lite
+- Fixed: Vertex AI 403 → switched to direct Gemini API with GOOGLE_API_KEY
+- Fixed: 503 retry logic (5 attempts, 4s base exponential backoff)
+- Fixed: calibration_r=1.0 artifact from 503 dropout small-sample correlation
+- Replaced gemini-2.5-pro (perpetual 503) with gemini-2.5-flash-lite
+- Flash Lite emerged as cost-optimal model across entire battery
+
+### BigQuery Integration
+- bq_writer.py: streaming insert to benchmark_calls + benchmark_summaries tables
+- ADC re-authenticated with BigQuery scopes
+- User account granted bigquery.dataEditor + bigquery.user + serviceUsageConsumer
+
+## 2026-04-10
+
+### Expanded Task Battery
+- 30 examples per task (10 easy / 10 medium / 10 hard)
+- Realistic synthetic code with real bug patterns, CVE-style vulnerabilities, obfuscated names
+
+### Pipeline Simulation
+- 3-step code review pipeline: severity → bug type → fix
+- Three strategies: all-haiku, all-lite, cacr-routed
+- Results written to BigQuery pipeline_results table
+
+### Cost Model & Router
+- Cascade-aware expected cost formula with retry pricing
+- Cost matrix CSV output
+- LookupTableRouter (baseline) + CACRRouter (logistic regression)
+
+### Flask API
+- 7 endpoints: health, capability-matrix, calibration, pipeline-cost, cost-matrix, route, findings
+- Flask + flask-cors + gunicorn
+
+### React Dashboard
+- Vite + React + Recharts + Tailwind
+- 5 views: Capability Matrix, Calibration Explorer, Pipeline Cost, Router Playground, Model Efficiency
+
+### Infrastructure
+- Render deployment config (render.yaml)
+- Environment sync script (scripts/sync_env_to_render.py)
+- Makefile with benchmark, api-dev, dashboard-dev targets
+
+### Documentation
+- README.md, METHODOLOGY.md, CLAUDE.md, CONTEXT.md, FINDINGS.md, CHANGELOG.md
