@@ -3,6 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, Cell,
 } from 'recharts'
+import ELI5Panel from '../components/ELI5Panel'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -170,6 +171,11 @@ export default function ModelEfficiency() {
           </BarChart>
         </ResponsiveContainer>
       </div>
+
+      <ELI5Panel
+        dataSummary={modelSummaries.map(m => `${m.model}: avg efficiency=${m.avgEfficiency.toFixed(1)}, avg score=${m.avgScore.toFixed(2)}, avg cost=$${m.avgCost.toFixed(6)}`).join('\n')}
+        promptHint="You are explaining a model efficiency chart (score-to-cost ratio) to a non-technical engineer. Explain the score/cost ratio concept in plain English. Which model gives the most value per dollar and why that matters more than raw accuracy alone? Use the actual model names and numbers."
+      />
     </div>
   )
 }

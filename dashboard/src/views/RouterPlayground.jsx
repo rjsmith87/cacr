@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import ELI5Panel from '../components/ELI5Panel'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -198,6 +199,11 @@ export default function RouterPlayground() {
                   )}
                 </div>
               )}
+              <ELI5Panel
+                dataSummary={`Task: ${form.task}, Recommended model: ${result.recommended_model}, Expected cost: $${result.expected_cost?.toFixed(6)}, Complexity: ${result.inferred_complexity || result.complexity || 'unknown'}, Reasoning: ${result.reasoning}`}
+                promptHint="You are explaining an AI routing decision to a non-technical person. In plain English, explain why this model was picked for this task, what it costs, and whether this is a good deal. Don't use technical jargon — explain it like you're talking to a product manager."
+                refreshKey={result.recommended_model}
+              />
             </div>
           )}
         </div>

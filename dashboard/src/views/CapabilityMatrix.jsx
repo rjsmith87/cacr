@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import ELI5Panel from '../components/ELI5Panel'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -160,6 +161,11 @@ export default function CapabilityMatrix() {
           <TooltipContent data={tooltip.cell} />
         </div>
       )}
+
+      <ELI5Panel
+        dataSummary={cells.map(c => `${c.model} on ${c.task}: score=${c.score?.toFixed(2)}, latency=${c.latency?.toFixed(0)}ms, passes=${c.passes_threshold}`).join('\n')}
+        promptHint="You are explaining a capability matrix heatmap to a non-technical engineer. Explain which models are strong and weak on which tasks. Call out any red cells (low scores) specifically and explain what that means for someone building a multi-step AI pipeline in production."
+      />
     </div>
   )
 }

@@ -273,5 +273,43 @@ def explain_calibration():
         return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
 
 
+# ── POST /api/explain — generic ELI5 endpoint ─────────────────────
+
+@app.route("/api/explain", methods=["POST"])
+def explain():
+    """Generic ELI5: takes 'data_summary' and 'prompt_hint', returns explanation."""
+    data = request.get_json(force=True)
+    summary = data.get("data_summary", "")
+    hint = data.get("prompt_hint", "")
+    if not summary:
+        abort(400, "Missing 'data_summary'")
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY not configured"}), 500
+
+    from anthropic import Anthropic
+
+    prompt = (
+        f"{hint}\n\nHere is the data:\n\n{summary}\n\n"
+        "In 3-4 sentences, give a clear, direct explanation. "
+        "Use actual model names and numbers. No jargon."
+    )
+
+    try:
+        client = Anthropic(api_key=api_key)
+        text_parts = []
+        with client.messages.stream(
+            model="claude-sonnet-4-20250514",
+            max_tokens=350,
+            messages=[{"role": "user", "content": prompt}],
+        ) as stream:
+            for text in stream.text_stream:
+                text_parts.append(text)
+        return jsonify({"explanation": "".join(text_parts)})
+    except Exception as exc:
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=8000)

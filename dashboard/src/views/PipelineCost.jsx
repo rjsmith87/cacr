@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import ELI5Panel from '../components/ELI5Panel'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -184,6 +185,11 @@ export default function PipelineCost() {
           </tbody>
         </table>
       </div>
+
+      <ELI5Panel
+        dataSummary={strategies.map(s => `${STRATEGY_META[s.strategy]?.label || s.strategy}: cost=$${s.cost?.toFixed(6)}, latency=${s.latency?.toFixed(0)}ms, accuracy=${(s.accuracy*100)?.toFixed(1)}%`).join('\n')}
+        promptHint="You are explaining pipeline cost comparison to a non-technical engineer. Explain what the cost difference means in real terms — if you ran 1 million requests, what would each strategy cost? Which strategy would you pick and why? Be specific with dollar amounts."
+      />
     </div>
   )
 }
