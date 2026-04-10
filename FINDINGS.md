@@ -37,13 +37,14 @@ An earlier run showed Gemini Flash with cal_r=1.000 on CodeSummarization. Root c
 
 3-step pipeline: severity classification → bug type identification → fix suggestion. 10 code snippets, 3 strategies:
 
-| Strategy    | Step1 Acc | Step2 Acc | Step3 Acc | Cascade Fail | Cost        | Latency |
-|-------------|-----------|-----------|-----------|--------------|-------------|---------|
-| all-haiku   | 0.30      | 0.80      | 0.20      | 0.80         | $0.00223    | 2183ms  |
-| all-lite    | 0.20      | 1.00      | 0.20      | 0.80         | $0.00008    | 1319ms  |
-| cacr-routed | 0.20      | 1.00      | 0.20      | 0.80         | $0.00008    | 1456ms  |
+| Strategy       | Severity | Bug Type | CVE Detect | Fix  | Cascade Fail | Cost       | Latency |
+|----------------|----------|----------|------------|------|--------------|------------|---------|
+| all-haiku      | 0.40     | 0.90     | 0.40       | 0.30 | 0.70         | $0.003154  | 3798ms  |
+| all-lite       | 0.30     | 0.90     | 0.30       | 0.30 | 0.70         | $0.000119  | 3568ms  |
+| all-gpt4o-mini | 0.30     | 0.70     | 0.30       | 0.20 | 0.80         | $0.000451  | 13666ms |
+| cacr-routed    | 0.30     | 0.90     | 0.30       | 0.30 | 0.70         | $0.000119  | 2007ms  |
 
-Step 1 (severity) is the weak link — the 4-level severity scale is subjective and models disagree with gold labels. Step 2 (bug type) is strong, especially for Flash Lite (1.00). Cost difference: Haiku costs **28x more** for comparable accuracy.
+4-step pipeline: severity → bug type → CVE detection → fix suggestion. 10 snippets (7 bugs, 3 with security vulnerabilities). Step 2 (bug type) is the strongest across all strategies at 0.70-0.90. CACR matches Flash Lite cost ($0.000119) at lower latency (2007ms vs 3568ms). GPT-4o-mini is anomalously slow (13.6s) and has the worst cascade failure rate. Haiku costs **26x more** for comparable accuracy.
 
 ## Cost Model
 

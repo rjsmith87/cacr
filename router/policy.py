@@ -48,23 +48,48 @@ class LookupTableRouter:
             row["is_cost_optimal"] = row.get("is_cost_optimal", "").lower() == "true"
 
     def route(self, task: str, **kwargs: Any) -> RoutingDecision:
-        candidates = [r for r in self._matrix if r["task"] == task and r["passes_threshold"]]
+        task_rows = [r for r in self._matrix if r["task"] == task]
+        candidates = [r for r in task_rows if r["passes_threshold"]]
+
         if not candidates:
-            # Fallback to Haiku
             return RoutingDecision(
                 recommended_model="claude-haiku-4-5",
                 expected_cost=0.00023,
                 confidence_interval=(0.0, 1.0),
                 reasoning=f"No model passes threshold for {task}; defaulting to Haiku.",
             )
-        best = min(candidates, key=lambda r: r["expected_cost_usd"])
+
+        best_t1 = min(candidates, key=lambda r: r["expected_cost_usd"])
+
+        # Escalation: if cheapest passing model scores below 0.6,
+        # escalate to cheapest tier-2+ model scoring above 0.7.
+        if best_t1["mean_score"] < 0.6:
+            escalation = [
+                r for r in task_rows
+                if r["mean_score"] >= 0.7
+                and r.get("cost_per_token", 0) > best_t1.get("cost_per_token", 0)
+            ]
+            if escalation:
+                esc = min(escalation, key=lambda r: float(r.get("expected_cost_usd", 999)))
+                return RoutingDecision(
+                    recommended_model=esc["model"],
+                    expected_cost=float(esc["expected_cost_usd"]),
+                    confidence_interval=(esc["mean_score"] - 0.1, min(1.0, esc["mean_score"] + 0.1)),
+                    reasoning=(
+                        f"Escalated: cheapest passing model {best_t1['model']} scores "
+                        f"{best_t1['mean_score']:.2f} (below 0.6 threshold). "
+                        f"Escalating to {esc['model']} (score={esc['mean_score']:.2f}, "
+                        f"cost=${float(esc['expected_cost_usd']):.8f})."
+                    ),
+                )
+
         return RoutingDecision(
-            recommended_model=best["model"],
-            expected_cost=best["expected_cost_usd"],
-            confidence_interval=(best["mean_score"] - 0.1, min(1.0, best["mean_score"] + 0.1)),
+            recommended_model=best_t1["model"],
+            expected_cost=float(best_t1["expected_cost_usd"]),
+            confidence_interval=(best_t1["mean_score"] - 0.1, min(1.0, best_t1["mean_score"] + 0.1)),
             reasoning=(
-                f"Cheapest passing model for {task}: {best['model']} "
-                f"(score={best['mean_score']:.2f}, cost=${best['expected_cost_usd']:.8f})"
+                f"Cheapest passing model for {task}: {best_t1['model']} "
+                f"(score={best_t1['mean_score']:.2f}, cost=${float(best_t1['expected_cost_usd']):.8f})"
             ),
         )
 

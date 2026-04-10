@@ -20,13 +20,15 @@ function formatPct(val) {
 const STRATEGY_META = {
   'all-haiku': { label: 'All Haiku', desc: 'Every step uses Claude Haiku ($1.00/MTok)', accent: 'amber' },
   'all-lite': { label: 'All Flash Lite', desc: 'Every step uses Gemini Flash Lite ($0.04/MTok)', accent: 'emerald' },
-  'cacr-routed': { label: 'CACR Routed', desc: 'Cheapest passing model per step', accent: 'indigo' },
+  'all-gpt4o-mini': { label: 'All GPT-4o-mini', desc: 'Every step uses GPT-4o-mini ($0.15/MTok)', accent: 'sky' },
+  'cacr-routed': { label: 'CACR Routed', desc: 'Cheapest passing model per step, with escalation', accent: 'indigo' },
 }
 
 function accentClasses(accent) {
   const map = {
     amber: { border: 'border-amber-500/30', bg: 'bg-amber-500/10', text: 'text-amber-400', badge: 'bg-amber-500' },
     emerald: { border: 'border-emerald-500/30', bg: 'bg-emerald-500/10', text: 'text-emerald-400', badge: 'bg-emerald-500' },
+    sky: { border: 'border-sky-500/30', bg: 'bg-sky-500/10', text: 'text-sky-400', badge: 'bg-sky-500' },
     indigo: { border: 'border-indigo-500/30', bg: 'bg-indigo-500/10', text: 'text-indigo-400', badge: 'bg-indigo-500' },
   }
   return map[accent] || map.indigo
@@ -49,9 +51,11 @@ export default function PipelineCost() {
           strategy: r.strategy,
           cost: r.total_cost_usd,
           latency: r.mean_latency_ms,
-          accuracy: r.step3_accuracy,
+          accuracy: r.step4_accuracy ?? r.step3_accuracy,
           step1_accuracy: r.step1_accuracy,
           step2_accuracy: r.step2_accuracy,
+          step3_accuracy: r.step3_accuracy,
+          step4_accuracy: r.step4_accuracy,
           cascade_failure_rate: r.cascade_failure_rate,
           n: r.n,
         }))
@@ -85,7 +89,7 @@ export default function PipelineCost() {
       </div>
 
       {/* Strategy cards — cost is the hero metric */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         {strategies.map(strategy => {
           const key = strategy.name || strategy.strategy || 'unknown'
           const meta = STRATEGY_META[key] || { label: key, desc: '', accent: 'indigo' }
@@ -149,9 +153,10 @@ export default function PipelineCost() {
               <th className="text-left px-4 py-3 text-gray-400 font-medium">Strategy</th>
               <th className="text-right px-4 py-3 text-gray-400 font-medium">Cost</th>
               <th className="text-right px-4 py-3 text-gray-400 font-medium">Latency</th>
-              <th className="text-right px-4 py-3 text-gray-400 font-medium">Step 1</th>
-              <th className="text-right px-4 py-3 text-gray-400 font-medium">Step 2</th>
-              <th className="text-right px-4 py-3 text-gray-400 font-medium">Step 3</th>
+              <th className="text-right px-4 py-3 text-gray-400 font-medium">Severity</th>
+              <th className="text-right px-4 py-3 text-gray-400 font-medium">Bug Type</th>
+              <th className="text-right px-4 py-3 text-gray-400 font-medium">CVE Detect</th>
+              <th className="text-right px-4 py-3 text-gray-400 font-medium">Fix</th>
               <th className="text-right px-4 py-3 text-gray-400 font-medium">Cascade Fail</th>
             </tr>
           </thead>
@@ -170,7 +175,8 @@ export default function PipelineCost() {
                   </td>
                   <td className="px-4 py-3 text-right font-mono text-gray-500">{formatPct(strategy.step1_accuracy)}</td>
                   <td className="px-4 py-3 text-right font-mono text-gray-500">{formatPct(strategy.step2_accuracy)}</td>
-                  <td className="px-4 py-3 text-right font-mono text-gray-500">{formatPct(strategy.accuracy)}</td>
+                  <td className="px-4 py-3 text-right font-mono text-gray-500">{formatPct(strategy.step3_accuracy)}</td>
+                  <td className="px-4 py-3 text-right font-mono text-gray-500">{formatPct(strategy.step4_accuracy)}</td>
                   <td className="px-4 py-3 text-right font-mono text-gray-500">{formatPct(strategy.cascade_failure_rate)}</td>
                 </tr>
               )

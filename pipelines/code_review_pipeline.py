@@ -1,13 +1,15 @@
-"""3-step code review pipeline simulation.
+"""4-step code review pipeline simulation.
 
 Step 1: Classify bug severity (critical/high/medium/low)
 Step 2: Identify bug type (logic_error, null_pointer, off_by_one, resource_leak, race_condition)
-Step 3: Suggest a one-sentence fix
+Step 3: Detect security vulnerability (yes/no) — uses CVE detection knowledge
+Step 4: Suggest a one-sentence fix
 
-Runs under three routing strategies:
-  (a) all-haiku   — every step uses Claude Haiku
-  (b) all-lite    — every step uses Gemini 2.5 Flash Lite
-  (c) cacr-routed — cheapest model that passed threshold per step type
+Runs under four routing strategies:
+  (a) all-haiku      — every step uses Claude Haiku
+  (b) all-lite       — every step uses Gemini 2.5 Flash Lite
+  (c) all-gpt4o-mini — every step uses GPT-4o-mini
+  (d) cacr-routed    — cheapest model per step, with escalation for weak tasks
 """
 
 import json
@@ -53,60 +55,71 @@ SNIPPETS = [
         "code": 'def divide(a, b):\n    return a / b',
         "gold_severity": "critical",
         "gold_type": "logic_error",
+        "gold_vuln": False,
         "gold_fix": "Add a check for b == 0 before dividing to avoid ZeroDivisionError.",
     },
     {
         "code": 'def get_name(user):\n    return user["name"].upper()\n# called with get_name(None)',
         "gold_severity": "critical",
         "gold_type": "null_pointer",
+        "gold_vuln": False,
         "gold_fix": "Check if user is None before accessing the name key.",
     },
     {
         "code": 'def first_n(items, n):\n    return [items[i] for i in range(1, n)]',
         "gold_severity": "medium",
         "gold_type": "off_by_one",
+        "gold_vuln": False,
         "gold_fix": "Change range(1, n) to range(n) to include the first element.",
     },
     {
         "code": 'def read_file(path):\n    f = open(path)\n    return f.read()',
         "gold_severity": "medium",
         "gold_type": "resource_leak",
+        "gold_vuln": False,
         "gold_fix": "Use a with statement to ensure the file is closed after reading.",
     },
     {
         "code": 'import threading\nbal = 0\ndef add(x):\n    global bal\n    tmp = bal\n    tmp += x\n    bal = tmp',
         "gold_severity": "high",
         "gold_type": "race_condition",
+        "gold_vuln": False,
         "gold_fix": "Protect the read-modify-write of bal with a threading.Lock.",
     },
+    # Snippets with security vulnerabilities
     {
-        "code": 'def avg(nums):\n    return sum(nums) / len(nums)',
+        "code": 'def get_user(conn, name):\n    return conn.execute(f"SELECT * FROM users WHERE name=\'{name}\'").fetchone()',
         "gold_severity": "critical",
         "gold_type": "logic_error",
-        "gold_fix": "Handle the case where nums is empty to avoid ZeroDivisionError.",
+        "gold_vuln": True,
+        "gold_fix": "Use parameterized queries to prevent SQL injection.",
     },
     {
-        "code": 'def find(d, key):\n    return d[key].strip()',
+        "code": 'from flask import request\n@app.route("/greet")\ndef greet():\n    return f"<h1>Hello, {request.args.get(\'name\')}!</h1>"',
         "gold_severity": "high",
-        "gold_type": "null_pointer",
-        "gold_fix": "Use d.get(key) and check for None before calling strip.",
+        "gold_type": "logic_error",
+        "gold_vuln": True,
+        "gold_fix": "Escape user input before rendering in HTML to prevent XSS.",
     },
     {
-        "code": 'def last_n(items, n):\n    return items[len(items)-n+1:]',
-        "gold_severity": "low",
-        "gold_type": "off_by_one",
-        "gold_fix": "Change len(items)-n+1 to len(items)-n to include all n items.",
+        "code": 'import pickle\nfrom flask import request\n@app.route("/load", methods=["POST"])\ndef load():\n    return str(pickle.loads(request.data))',
+        "gold_severity": "critical",
+        "gold_type": "logic_error",
+        "gold_vuln": True,
+        "gold_fix": "Never use pickle.loads on untrusted input; use json.loads instead.",
     },
     {
         "code": 'import sqlite3\ndef query(db, sql):\n    conn = sqlite3.connect(db)\n    return conn.execute(sql).fetchall()',
         "gold_severity": "medium",
         "gold_type": "resource_leak",
+        "gold_vuln": False,
         "gold_fix": "Close the connection after use, or use a with statement.",
     },
     {
         "code": 'from concurrent.futures import ThreadPoolExecutor\ntotal = []\ndef work(x):\n    total.append(x)\nwith ThreadPoolExecutor() as e:\n    e.map(work, range(100))',
         "gold_severity": "high",
         "gold_type": "race_condition",
+        "gold_vuln": False,
         "gold_fix": "Use a lock when appending to the shared list, or use a thread-safe queue.",
     },
 ]
@@ -135,9 +148,18 @@ def step2_prompt(code: str) -> str:
     )
 
 
-def step3_prompt(code: str, severity: str, bug_type: str) -> str:
+def step3_prompt(code: str) -> str:
     return (
-        f"The following Python code has a {severity}-severity {bug_type} bug.\n"
+        "Does the following Python code contain a security vulnerability?\n"
+        "Respond with ONLY 'yes' or 'no', nothing else.\n\n"
+        f"```python\n{code}\n```\nVulnerable:"
+    )
+
+
+def step4_prompt(code: str, severity: str, bug_type: str, has_vuln: str) -> str:
+    vuln_note = " It also has a security vulnerability." if has_vuln == "yes" else ""
+    return (
+        f"The following Python code has a {severity}-severity {bug_type} bug.{vuln_note}\n"
         "Suggest a one-sentence fix.\n"
         "Respond with ONLY the fix sentence, nothing else.\n\n"
         f"```python\n{code}\n```\nFix:"
@@ -160,10 +182,17 @@ def _parse_label(output: str) -> str:
 # So CACR routes everything to flash-lite for this battery.
 # If flash-lite had failed threshold, we'd escalate to haiku.
 
+# CACR routing: cheapest passing model per step, with escalation.
+# Step 1 (severity): classification → flash-lite (0.90, passes)
+# Step 2 (bug type): classification → flash-lite (0.90, passes)
+# Step 3 (CVE detect): security → flash-lite (0.93, passes; Flash only 0.50 — skip it)
+# Step 4 (fix): generation → flash-lite scores 0.42 (below 0.6) → escalate to gpt4o-mini (0.40)
+#   Actually both are below 0.7 escalation target, so stay with cheapest passing: flash-lite
 CACR_ROUTING = {
-    "step1": "flash-lite",  # classification → flash-lite (passed 0.87)
-    "step2": "flash-lite",  # classification → flash-lite (passed 0.87)
-    "step3": "flash-lite",  # generation → flash-lite (passed 0.45)
+    "step1": "flash-lite",   # classification: 0.90
+    "step2": "flash-lite",   # classification: 0.90
+    "step3": "flash-lite",   # security/CVE: 12/12 detected
+    "step4": "flash-lite",   # generation: 0.42 (passes 0.4 threshold, cheapest)
 }
 
 
@@ -179,8 +208,11 @@ class PipelineResult:
     step2_correct: bool
     step3_model: str
     step3_output: str
-    step3_plausible: bool
-    cascade_failure: bool  # wrong step1/2 caused step3 to fail
+    step3_correct: bool
+    step4_model: str
+    step4_output: str
+    step4_plausible: bool
+    cascade_failure: bool
     total_latency_ms: float
     total_cost_usd: float
 
@@ -243,10 +275,10 @@ def run_pipeline(
         s2 = _parse_label(out2)
         s2_correct = s2 == snip["gold_type"]
 
-        # Step 3 — uses output of steps 1 & 2
+        # Step 3 — CVE/security detection
         m3_name = model_map["step3"]
         m3 = models[m3_name]
-        p3 = step3_prompt(code, s1 or "unknown", s2 or "unknown")
+        p3 = step3_prompt(code)
         t0 = time.perf_counter()
         try:
             out3 = m3.generate(p3)
@@ -255,12 +287,27 @@ def run_pipeline(
         lat3 = (time.perf_counter() - t0) * 1000
         total_lat += lat3
         total_cost += _est_tokens(p3 + out3) * m3.cost_per_token
+        s3 = _parse_label(out3)
+        s3_detected = "yes" in s3
+        s3_correct = s3_detected == snip["gold_vuln"]
 
-        # Step 3 plausibility: non-empty and mentions a fix-like action
-        s3_text = out3.strip()
-        s3_plausible = len(s3_text) > 10 and s1_correct and s2_correct
+        # Step 4 — fix suggestion, uses output of steps 1-3
+        m4_name = model_map["step4"]
+        m4 = models[m4_name]
+        p4 = step4_prompt(code, s1 or "unknown", s2 or "unknown", "yes" if s3_detected else "no")
+        t0 = time.perf_counter()
+        try:
+            out4 = m4.generate(p4)
+        except Exception:
+            out4 = ""
+        lat4 = (time.perf_counter() - t0) * 1000
+        total_lat += lat4
+        total_cost += _est_tokens(p4 + out4) * m4.cost_per_token
 
-        cascade_failure = (not s1_correct or not s2_correct) and not s3_plausible
+        s4_text = out4.strip()
+        s4_plausible = len(s4_text) > 10 and s1_correct and s2_correct
+
+        cascade_failure = (not s1_correct or not s2_correct or not s3_correct) and not s4_plausible
 
         results.append(PipelineResult(
             strategy=strategy,
@@ -272,8 +319,11 @@ def run_pipeline(
             step2_output=s2,
             step2_correct=s2_correct,
             step3_model=m3_name,
-            step3_output=s3_text[:200],
-            step3_plausible=s3_plausible,
+            step3_output=s3,
+            step3_correct=s3_correct,
+            step4_model=m4_name,
+            step4_output=s4_text[:200],
+            step4_plausible=s4_plausible,
             cascade_failure=cascade_failure,
             total_latency_ms=round(total_lat, 2),
             total_cost_usd=total_cost,
@@ -292,8 +342,9 @@ def main() -> int:
         return 1
 
     strategies = {
-        "all-haiku": {"step1": "haiku", "step2": "haiku", "step3": "haiku"},
-        "all-lite": {"step1": "flash-lite", "step2": "flash-lite", "step3": "flash-lite"},
+        "all-haiku": {"step1": "haiku", "step2": "haiku", "step3": "haiku", "step4": "haiku"},
+        "all-lite": {"step1": "flash-lite", "step2": "flash-lite", "step3": "flash-lite", "step4": "flash-lite"},
+        "all-gpt4o-mini": {"step1": "gpt4o-mini", "step2": "gpt4o-mini", "step3": "gpt4o-mini", "step4": "gpt4o-mini"},
         "cacr-routed": CACR_ROUTING,
     }
 
@@ -312,7 +363,8 @@ def main() -> int:
         n = len(results)
         s1_acc = sum(r.step1_correct for r in results) / n
         s2_acc = sum(r.step2_correct for r in results) / n
-        s3_acc = sum(r.step3_plausible for r in results) / n
+        s3_acc = sum(r.step3_correct for r in results) / n
+        s4_acc = sum(r.step4_plausible for r in results) / n
         cascade_rate = sum(r.cascade_failure for r in results) / n
         total_cost = sum(r.total_cost_usd for r in results)
         mean_lat = sum(r.total_latency_ms for r in results) / n
@@ -330,6 +382,7 @@ def main() -> int:
             "step1_accuracy": round(s1_acc, 3),
             "step2_accuracy": round(s2_acc, 3),
             "step3_accuracy": round(s3_acc, 3),
+            "step4_accuracy": round(s4_acc, 3),
             "cascade_failure_rate": round(cascade_rate, 3),
             "total_cost_usd": round(total_cost, 8),
             "mean_latency_ms": round(mean_lat, 2),
@@ -362,7 +415,10 @@ def main() -> int:
                 bigquery.SchemaField("step2_correct", "BOOLEAN"),
                 bigquery.SchemaField("step3_model", "STRING"),
                 bigquery.SchemaField("step3_output", "STRING"),
-                bigquery.SchemaField("step3_plausible", "BOOLEAN"),
+                bigquery.SchemaField("step3_correct", "BOOLEAN"),
+                bigquery.SchemaField("step4_model", "STRING"),
+                bigquery.SchemaField("step4_output", "STRING"),
+                bigquery.SchemaField("step4_plausible", "BOOLEAN"),
                 bigquery.SchemaField("cascade_failure", "BOOLEAN"),
                 bigquery.SchemaField("total_latency_ms", "FLOAT"),
                 bigquery.SchemaField("total_cost_usd", "FLOAT"),
@@ -370,6 +426,7 @@ def main() -> int:
                 bigquery.SchemaField("step1_accuracy", "FLOAT"),
                 bigquery.SchemaField("step2_accuracy", "FLOAT"),
                 bigquery.SchemaField("step3_accuracy", "FLOAT"),
+                bigquery.SchemaField("step4_accuracy", "FLOAT"),
                 bigquery.SchemaField("cascade_failure_rate", "FLOAT"),
                 bigquery.SchemaField("mean_latency_ms", "FLOAT"),
             ]

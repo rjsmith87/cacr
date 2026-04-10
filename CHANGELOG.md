@@ -81,3 +81,12 @@
 
 ### Blog Post
 - BLOG_DRAFT.md: "The $0.00000004 Security Scanner" — data-driven writeup of CVE findings
+
+### 4-Step Pipeline with CVE Detection + Escalation Router
+- Pipeline expanded from 3 to 4 steps: severity → bug type → CVE detection → fix
+- Added GPT-4o-mini as 4th routing strategy (all-gpt4o-mini)
+- CACR router escalation logic: if best tier-1 score < 0.6, escalate to cheapest
+  tier-2 model scoring > 0.7
+- 3 snippets now include security vulnerabilities (SQL injection, XSS, pickle RCE)
+- GPT-4o-mini anomalously slow (13.6s) with worst cascade failure rate
+- CACR matches Flash Lite cost at lower latency via model reuse
