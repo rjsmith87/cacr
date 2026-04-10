@@ -20,7 +20,7 @@ function HeatmapTooltip({ payload }) {
   return (
     <div className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 shadow-xl text-sm min-w-max">
       <p className="font-semibold text-white mb-1">{data.model} / {data.task}</p>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-gray-300">
+      <div className="grid grid-cols-[auto_auto] gap-x-4 gap-y-0.5 text-gray-300 whitespace-nowrap">
         <span>Score:</span>
         <span className="text-right font-mono">{data.score?.toFixed(3) ?? 'N/A'}</span>
         <span>Confidence:</span>
@@ -100,13 +100,14 @@ export default function CapabilityMatrix() {
             </tr>
           </thead>
           <tbody>
-            {tasks.map(task => (
+            {tasks.map((task, rowIdx) => (
               <tr key={task}>
                 <td className="text-sm text-gray-300 p-2 font-medium">{task}</td>
                 {models.map(model => {
                   const cell = cells.find(c => c.task === task && c.model === model)
                   const score = cell?.score
                   const isHovered = hoveredCell?.task === task && hoveredCell?.model === model
+                  const showBelow = rowIdx === 0
                   return (
                     <td key={model} className="p-1">
                       <div
@@ -123,7 +124,7 @@ export default function CapabilityMatrix() {
                           {score != null ? score.toFixed(2) : '—'}
                         </span>
                         {isHovered && cell && (
-                          <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 pointer-events-none">
+                          <div className={`absolute z-50 left-1/2 -translate-x-1/2 pointer-events-none ${showBelow ? 'top-full mt-2' : 'bottom-full mb-2'}`}>
                             <HeatmapTooltip payload={[{ payload: cell }]} />
                           </div>
                         )}
