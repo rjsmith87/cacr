@@ -46,7 +46,7 @@ router/
   cost_model.py        # Expected cost with cascade failure pricing
   policy.py            # LookupTableRouter + CACRRouter (logistic regression)
   complexity.py        # Auto-infer easy/medium/hard from code via static analysis
-api/main.py            # Flask API — 7 endpoints backed by BigQuery
+api/main.py            # Flask API — 10 endpoints (see below)
 dashboard/             # React + Recharts + Tailwind dashboard
 results/               # BigQuery writer + cost matrix CSV
 ```
@@ -54,6 +54,21 @@ results/               # BigQuery writer + cost matrix CSV
 ## Key Finding
 
 For a 3-step agentic pipeline (classify → identify → fix), CACR routes all steps to Flash Lite — saving 25x per token vs Haiku with no accuracy loss on classification. The cost model accounts for cascade failures: when a cheap model fails step 1, the retry cost of a Haiku fallback is still cheaper than running Haiku on every call.
+
+## API Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET  | `/health`                  | Render health check |
+| GET  | `/api/health`              | Status, model/task counts, total calls |
+| GET  | `/api/capability-matrix`   | Models × tasks heatmap data |
+| GET  | `/api/calibration`         | Confidence vs accuracy scatter per model |
+| GET  | `/api/pipeline-cost`       | Pipeline strategy comparison |
+| GET  | `/api/cost-matrix`         | `cost_matrix.csv` as JSON |
+| POST | `/api/route`               | Route a prompt to cost-optimal model |
+| GET  | `/api/findings`            | `FINDINGS.md` as markdown |
+| POST | `/api/explain-calibration` | Claude ELI5 of calibration data |
+| POST | `/api/explain`             | Generic Claude ELI5 endpoint |
 
 ## Methodology
 

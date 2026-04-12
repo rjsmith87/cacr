@@ -1,13 +1,16 @@
 """CACR — Flask backend.
 
-Endpoints:
-  GET  /api/health           — status, model count, task count, total calls
-  GET  /api/capability-matrix — models x tasks x scores heatmap data
-  GET  /api/calibration       — confidence vs accuracy scatter data per model
-  GET  /api/pipeline-cost     — pipeline strategy comparison
-  GET  /api/cost-matrix       — cost_matrix.csv as JSON
-  POST /api/route             — route a prompt to cost-optimal model
-  GET  /api/findings          — FINDINGS.md as markdown
+Endpoints (10):
+  GET  /health                    — Render health check
+  GET  /api/health                — status, model count, task count, total calls
+  GET  /api/capability-matrix     — models x tasks x scores heatmap data
+  GET  /api/calibration           — confidence vs accuracy scatter data per model
+  GET  /api/pipeline-cost         — pipeline strategy comparison
+  GET  /api/cost-matrix           — cost_matrix.csv as JSON
+  POST /api/route                 — route a prompt to cost-optimal model
+  GET  /api/findings              — FINDINGS.md as markdown
+  POST /api/explain-calibration   — Claude ELI5 of calibration data
+  POST /api/explain               — generic Claude ELI5 endpoint
 """
 
 import csv
@@ -23,6 +26,9 @@ sys.path.insert(0, _ROOT)
 
 app = Flask(__name__)
 CORS(app)
+
+# Model used for ELI5 explanation endpoints.
+EXPLAIN_MODEL = "claude-sonnet-4-20250514"
 
 
 def _load_dotenv() -> None:
@@ -261,7 +267,7 @@ def explain_calibration():
         # Stream the response
         text_parts = []
         with client.messages.stream(
-            model="claude-sonnet-4-20250514",
+            model=EXPLAIN_MODEL,
             max_tokens=300,
             messages=[{"role": "user", "content": prompt}],
         ) as stream:
@@ -300,7 +306,7 @@ def explain():
         client = Anthropic(api_key=api_key)
         text_parts = []
         with client.messages.stream(
-            model="claude-sonnet-4-20250514",
+            model=EXPLAIN_MODEL,
             max_tokens=350,
             messages=[{"role": "user", "content": prompt}],
         ) as stream:
