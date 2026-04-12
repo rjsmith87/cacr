@@ -20,9 +20,9 @@ Flash Lite is cost-optimal on every task in the battery.
 ## Quick Start
 
 ```bash
-git clone <repo> && cd slm-router
+git clone <repo> && cd cacr
 python -m venv venv && source venv/bin/activate
-pip install -r requirements-api.txt
+pip install -r requirements.txt
 cp .env.example .env  # fill in API keys
 
 # Run the benchmark
