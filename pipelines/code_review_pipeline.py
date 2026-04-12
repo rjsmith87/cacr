@@ -45,7 +45,7 @@ _load_dotenv(os.path.join(_ROOT, ".env"))
 from models.anthropic_adapter import ClaudeHaiku  # noqa: E402
 from models.base import Model  # noqa: E402
 from models.gemini_adapter import GeminiFlash  # noqa: E402
-from models.gemini_pro_adapter import GeminiFlashLite  # noqa: E402
+from models.gemini_flash_lite_adapter import GeminiFlashLite  # noqa: E402
 from models.openai_adapter import GPT4oMini  # noqa: E402
 
 # ── pipeline snippets ──────────────────────────────────────────────

@@ -22,7 +22,7 @@ from typing import Any, Iterable
 from models.anthropic_adapter import ClaudeHaiku
 from models.base import Model
 from models.gemini_adapter import GeminiFlash
-from models.gemini_pro_adapter import GeminiFlashLite
+from models.gemini_flash_lite_adapter import GeminiFlashLite
 from models.openai_adapter import GPT4oMini
 from results.bq_writer import write_rows
 from tasks.base import Task
