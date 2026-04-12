@@ -44,6 +44,7 @@ results/bq_writer.py   → BigQuery streaming insert (ADC or SA JSON via env var
 - Gemini models hit 503s under load — retry logic (5 attempts, 4s base backoff) helps but doesn't eliminate
 - Severity classification (pipeline step 1) has low accuracy across all models — gold labels may need revision
 - CACR LogReg router is trivial (Flash Lite is cost-optimal everywhere) — needs tasks where Flash Lite fails to create meaningful routing decisions
+- Confidence self-scoring doubles API calls (720 per benchmark run) — replace with logprob extraction
 
 ## Key decisions and why
 
@@ -68,9 +69,30 @@ results/bq_writer.py   → BigQuery streaming insert (ADC or SA JSON via env var
 
 ## What to work on next
 
-1. Expand to 100+ examples per task for statistical significance
-2. Add logprob-based confidence extraction (replace second API call)
-3. Add harder tasks where Flash Lite fails to create meaningful escalation routing
-4. Fix pipeline step 1 gold labels (severity is subjective)
-5. Add streaming to ELI5 panels (currently waits for full response)
-6. Blog post finalization and publication
+**Phase 2 — extending CACR beyond the benchmark:**
+
+1. **CLI tool** — `cacr route <prompt>` for terminal use, wrapping the trained router
+2. **Public leaderboard** — rolling capability matrix updated nightly, hosted on the dashboard
+3. **RouteLLM comparison** — benchmark CACR's lookup + LogReg routers against RouteLLM's published baselines on shared tasks
+4. **Agentforce reference architecture** — concrete worked example showing CACR routing inside a Salesforce Agentforce pipeline (classification → retrieval → generation)
+
+**Carry-over technical debt:**
+
+- Expand to 100+ examples per task for statistical significance
+- Logprob-based confidence extraction (replace the second API call)
+- Add harder tasks where Flash Lite fails to create meaningful escalation routing
+- Fix pipeline step 1 gold labels (severity is subjective)
+- Stream ELI5 panel responses
+
+## Audit history
+
+**2026-04-12** — Repo audit + 8 fixes shipped (commits `19b1774` → `b1ddb8a`):
+requirements.txt added, render.yaml env var renamed to `_JSON`, `.env.example`
+documents both auth paths, empty `config.py` removed, `gemini_pro_adapter.py`
+renamed to `gemini_flash_lite_adapter.py`, README endpoint count corrected to
+10 with full table, `EXPLAIN_MODEL` constant extracted, `/api/route` now
+actually consumes inferred complexity via `CACRRouter`, 14-test pytest suite
+added, python-ci workflow added (import smoke test + pytest), `runtime.txt`
+pins Python 3.13.2, README Methodology Notes documents call doubling, pricing
+date, and determinism caveats. All P0 and P1 issues from the audit are
+resolved; repo is cleanly cloneable from scratch.

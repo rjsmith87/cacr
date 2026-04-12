@@ -56,6 +56,23 @@ All tabs have "What does this mean?" ELI5 panels powered by Claude Sonnet via PO
 - **Tooltip positioning**: position:fixed via getBoundingClientRect() — completely outside table flow, no overlap/clipping
 - **Build cache busting**: __BUILD_TS__ define in vite.config.js ensures unique bundle hashes per deploy
 
+## Session log
+
+### 2026-04-12 — Repo audit and cleanup
+
+Did a clone-from-scratch audit of the entire repo against what a senior engineer would expect. Shipped 8 fixes in sequence (commits `19b1774` → `b1ddb8a`):
+
+1. **`requirements.txt`** — `requirements-api.txt` only covered the API; running `runner.py` fresh would `ImportError` on `google-genai` / `openai`. New top-level file pins the runner deps.
+2. **`render.yaml` env var** — renamed `GOOGLE_APPLICATION_CREDENTIALS` to `GOOGLE_APPLICATION_CREDENTIALS_JSON` to match what `bq_writer.py` actually reads (Render had been silently falling through to ADC).
+3. **`.env.example`** — documents both the Render JSON-string path and the local ADC path.
+4. **Cleanup** — deleted empty `config.py`; renamed `models/gemini_pro_adapter.py` → `models/gemini_flash_lite_adapter.py` and updated all 3 import sites.
+5. **API docs** — counted the actual routes (10), updated README + module docstring; pulled hardcoded `claude-sonnet-4-20250514` into a single `EXPLAIN_MODEL` constant.
+6. **`/api/route` wiring** — handler was inferring complexity then discarding it. Switched to `CACRRouter` (which consumes complexity + task_family) with a `LookupTableRouter` fallback when the classifier isn't trained.
+7. **Tests + CI** — `tests/test_python.py` (14 passing tests covering `_pearson`, `_parse_confidence`, `infer_complexity`, and adapter init failures); `.github/workflows/python-ci.yml` runs `import runner, api.main` smoke test then pytest on every push/PR to main.
+8. **Methodology disclosures** — `runtime.txt` pins `python-3.13.2`; README now documents the 720-vs-360 call doubling, input-token-only April 2026 pricing, and the determinism-drift caveat.
+
+Outcome: repo is cleanly cloneable from scratch; all P0 and P1 issues from the audit are closed. Phase 2 (CLI, leaderboard, RouteLLM comparison, Agentforce reference architecture) is now the next focus.
+
 ## Salesforce angle
 
 This framework directly demonstrates skills relevant to Salesforce's AI platform work:
