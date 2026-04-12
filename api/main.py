@@ -182,18 +182,33 @@ def route_prompt():
         abort(400, "Missing 'prompt' in request body")
 
     from router.complexity import infer_complexity
-    from router.policy import LookupTableRouter
+    from router.policy import CACRRouter, LookupTableRouter
 
-    # Infer complexity if "auto" or missing
+    task = data.get("task", "CodeReview")
+    task_family = data.get("task_family", "classification")
+
     complexity = data.get("complexity", "auto")
     inferred = None
     if complexity == "auto" or not complexity:
         inferred = infer_complexity(data["prompt"])
         complexity = inferred
 
-    router = LookupTableRouter()
-    task = data.get("task", "CodeReview")
-    decision = router.route(task)
+    # Try the trained CACRRouter first — it actually consumes complexity
+    # (LookupTableRouter is indexed by task only and ignores it). If the
+    # classifier isn't trained or fails to load, fall back to the lookup
+    # table which still provides a sane cost-matrix-grounded decision.
+    cacr = CACRRouter()
+    cacr.load()
+    if cacr._clf is not None:
+        decision = cacr.route(
+            data["prompt"],
+            task_family=task_family,
+            complexity=complexity,
+        )
+        router_used = "cacr"
+    else:
+        decision = LookupTableRouter().route(task)
+        router_used = "lookup_table"
 
     resp = {
         "recommended_model": decision.recommended_model,
@@ -201,6 +216,7 @@ def route_prompt():
         "confidence_interval": list(decision.confidence_interval),
         "reasoning": decision.reasoning,
         "complexity": complexity,
+        "router": router_used,
     }
     if inferred:
         resp["inferred_complexity"] = inferred
