@@ -74,6 +74,12 @@ For a 3-step agentic pipeline (classify → identify → fix), CACR routes all s
 
 See [METHODOLOGY.md](METHODOLOGY.md) for the full technical writeup.
 
+### Methodology Notes
+
+- **API calls are doubled by confidence self-scoring.** Each example triggers a second call to the same model asking it to rate its own confidence 1–10. A "360-call run" (4 models × 3 tasks × 30 examples) therefore makes ~720 API calls. Replacing this with logprob extraction is on the roadmap.
+- **Cost figures are input-token-only**, based on each provider's public list price as of **April 2026**. Output tokens (typically 3–5× more expensive) are not included; the published `$/MTok` numbers are a routing signal, not a billing forecast. Refresh the constants in `models/*_adapter.py` if pricing changes.
+- **Reruns will not exactly reproduce the published numbers.** Models are sampled at `temperature=0.0`, but providers do not guarantee determinism: per-call variation, retries on 503/429, and occasional refusals all introduce drift of a few percentage points per task. Treat the capability matrix as a snapshot, not a fixed-point.
+
 ## Dashboard
 
 The React dashboard provides:
