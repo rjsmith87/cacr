@@ -14,7 +14,7 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
-      - key: GOOGLE_APPLICATION_CREDENTIALS
+      - key: GOOGLE_APPLICATION_CREDENTIALS_JSON
         sync: false
 
   - type: web
