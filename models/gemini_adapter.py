@@ -15,6 +15,7 @@ from models.base import Model
 
 _MAX_RETRIES = 5
 _BASE_DELAY = 4.0  # seconds; doubles each attempt → 4, 8, 16, 32, 64
+_MIN_CALL_INTERVAL = 3.0  # Flash-specific rate-limit pacing (seconds)
 
 
 def _extract_retry_delay(exc: Exception) -> float | None:
@@ -32,7 +33,7 @@ class GeminiFlash(Model):
     def __init__(
         self,
         model_id: str = "gemini-2.5-flash",
-        max_tokens: int = 256,
+        max_tokens: int = 512,
         temperature: float = 0.0,
         api_key: str | None = None,
     ) -> None:
@@ -47,8 +48,12 @@ class GeminiFlash(Model):
             max_output_tokens=max_tokens,
             temperature=temperature,
         )
+        self._last_call_ts: float = 0.0
 
     def generate(self, prompt: str) -> str:
+        elapsed = time.time() - self._last_call_ts
+        if elapsed < _MIN_CALL_INTERVAL:
+            time.sleep(_MIN_CALL_INTERVAL - elapsed)
         last_exc: Exception | None = None
         for attempt in range(_MAX_RETRIES):
             try:
@@ -57,6 +62,7 @@ class GeminiFlash(Model):
                     contents=prompt,
                     config=self._config,
                 )
+                self._last_call_ts = time.time()
                 return response.text.strip()
             except (genai_errors.ServerError, genai_errors.ClientError) as exc:
                 code = getattr(exc, "status_code", 0) or 0
