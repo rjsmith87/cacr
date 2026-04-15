@@ -469,6 +469,26 @@
     "dropped": [
       "gemini-2.5-flash"
     ],
-    "why_more_interesting": "Original hypothesis (Flash vs Flash Lite) was a capability gap. New hypothesis (Flash Lite vs better-calibrated models) is a calibration gap \u2014 directly aligned with the pre-registered `dangerous_rate` metric. Flash Lite is cheap + accurate on class + confidently wrong on severity; that is exactly where a calibration-aware router earns its keep."
+    "why_more_interesting": "Original hypothesis (Flash vs Flash Lite) was a capability gap. New hypothesis (Flash Lite vs better-calibrated models) is a calibration gap \u2014 directly aligned with the pre-registered `dangerous_rate` metric. Flash Lite is cheap + accurate on class + confidently wrong on severity; that is exactly where a calibration-aware router earns its keep.",
+    "amendments": [
+      {
+        "timestamp_utc": "2026-04-15T04:50:56.653700+00:00",
+        "reversal": "Flash REINSTATED in the Phase 2 model roster.",
+        "reason": "On review, the 503 UNAVAILABLE rate on 11/12 Flash calls was infrastructure timing (saturated endpoint during peak hours) and the one returned response was truncated by a fixable 256-token output budget \u2014 neither is a capability signal. Dropping Flash before measuring it would leave the research question 'does the larger Gemini model inherit Flash Lite's overconfidence or self-correct?' permanently unanswered.",
+        "actions_taken": [
+          "GeminiFlash adapter: max_tokens 256 \u2192 512 (commit 25941d8)",
+          "GeminiFlash adapter: 3s minimum interval between calls on same instance (commit 25941d8)",
+          "Flash will be re-measured off-peak before Phase 2 commit #3"
+        ],
+        "roster_restored": [
+          "gemini-2.5-flash-lite",
+          "gemini-2.5-flash",
+          "gpt-4o-mini",
+          "claude-haiku",
+          "fine_tuned_tbd_phase3"
+        ],
+        "supersedes": "The earlier 'dropped: [gemini-2.5-flash]' decision in this same pivot_rationale block is rescinded."
+      }
+    ]
   }
 }
