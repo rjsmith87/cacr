@@ -84,6 +84,37 @@ results/bq_writer.py   → BigQuery streaming insert (ADC or SA JSON via env var
 - Fix pipeline step 1 gold labels (severity is subjective)
 - Stream ELI5 panel responses
 
+## Commit Protocol
+
+Commit rules for CACR Phase 2:
+- Commit at every logical checkpoint, not at the end of a session
+- Never bundle unrelated changes in one commit
+- Commit message format: `<type>(<scope>): <what and why>`
+  - Types: `feat`, `fix`, `chore`, `docs`, `test`, `refactor`
+  - Scope: `cve-battery`, `metrics`, `router`, `dashboard`, `routellm`, `runner`
+  - Example: `feat(cve-battery): add 5 Java CVEs with CVSS-banded gold labels`
+  - Example: `docs(metrics): pre-register dangerous_rate threshold at 0.10`
+  - Example: `feat(router): implement calibration-aware escalation rule for security tasks`
+- Every commit must leave the repo in a runnable state
+- No commits with messages like `update files`, `fix`, `wip`, or similar
+- After each commit, push to main immediately
+
+### Planned Phase 2 commit sequence
+
+1. `docs(metrics): pre-register CVE study success criteria and thresholds`
+2. `chore(runner): smoke test — re-run 12-CVE battery to confirm Flash vs Flash Lite gap`
+3. `feat(cve-battery): add 5 Python CVEs with CVSS-banded gold labels and snippets`
+4. `feat(cve-battery): add 5 Java CVEs with CVSS-banded gold labels and snippets`
+5. `feat(cve-battery): add 5 JavaScript CVEs with CVSS-banded gold labels and snippets`
+6. `feat(metrics): implement dangerous_rate, ECE, overconfidence, silent_miss_rate scoring`
+7. `feat(runner): implement CVE study runner with per-model calibration output`
+8. `feat(routellm): add RouteLLM adapter for Sonnet vs Flash Lite binary routing`
+9. `feat(routellm): run RouteLLM on CVE battery at three alpha thresholds`
+10. `feat(router): implement calibration-aware escalation rule using empirical dangerous_rate`
+11. `feat(dashboard): add CVE Security Study tab with hero accuracy vs dangerous_rate chart`
+12. `feat(dashboard): add reliability diagrams, per-CVE breakdown table, cascade cost panel`
+13. `docs(findings): publish results with pre-registered thresholds and honest outcome`
+
 ## Audit history
 
 **2026-04-12** — Repo audit + 8 fixes shipped (commits `19b1774` → `b1ddb8a`):
