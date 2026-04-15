@@ -63,7 +63,31 @@ results/bq_writer.py   → BigQuery streaming insert (ADC or SA JSON via env var
 - Python 3.13, venv at ./venv
 - Node 20, Playwright for E2E tests
 - API keys in .env: ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, GCP_PROJECT
-- BigQuery dataset: cacr_results (tables: benchmark_calls, benchmark_summaries, pipeline_results, cve_results)
+- BigQuery dataset: `cacr_results`. Tables (Phase 2):
+  - `benchmark_calls` — per-call records. Extended in Phase 2 with `source`,
+    `user_snippet`, `session_id`, `routing_decision`, `cascade_triggered`,
+    `thinking_tokens_disabled`, `model_version`, `adapter_config` (JSON),
+    `task_family`, `run_phase`. All new columns NULLABLE; Phase-1 rows
+    remain valid.
+  - `benchmark_summaries` — per-(model, task) rollups. Unchanged.
+  - `cve_study_calls` — NEW. Per-(model, CVE) row with gold labels
+    (CVSS-banded, OWASP-aligned), predictions, calibration event flags
+    (`dangerous_rate_event`, `silent_miss_event`), `overconfidence_score`,
+    `cascade_cost_usd`, and the RouteLLM shadow decision for comparison.
+  - `model_calibration_summary` — NEW. Per-(model, task_family, run) rollup
+    with `accuracy`, `dangerous_rate`, `silent_miss_rate`, `ece_10bin`,
+    expected costs with/without cascade, and the
+    `cacr_wins_on_dangerous_rate` boolean against the RouteLLM baseline.
+  - `live_trace_calls` — NEW. Routed calls from the production live
+    feature. `user_snippet_hash` is always hashed at the source; raw
+    snippets never leave the request handler.
+  - `fine_tune_training_set` — NEW (Phase 3). Curated training examples
+    with provenance (`source`, `cve_id`, `included_in_run`), human-verified
+    `confidence_gold`, and inter-rater `quality_score`.
+
+  Schema evolution is handled by `results.bq_writer._ensure_schema_current`,
+  which appends missing NULLABLE columns to existing tables on every write.
+  Columns are never dropped or retyped.
 - Render services: srv-d7cf11rbc2fs73eta09g (API), srv-d7cf147lk1mc7397nd70 (dashboard)
 - Deploy: `git push origin main` + clearCache via Render API for dashboard
 
