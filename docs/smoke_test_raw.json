@@ -1,5 +1,5 @@
 {
-  "timestamp_utc": "2026-04-15T04:43:37.928277+00:00",
+  "timestamp_utc": "2026-04-15T04:54:51.691449+00:00",
   "model_versions": {
     "flash-lite": "gemini-2.5-flash-lite",
     "flash": "gemini-2.5-flash"
@@ -12,9 +12,9 @@
       "both": 3
     },
     "flash": {
-      "vuln_class": 0,
-      "severity": 0,
-      "both": 0
+      "vuln_class": 5,
+      "severity": 4,
+      "both": 4
     }
   },
   "rows": [
@@ -31,7 +31,7 @@
             "confidence": 9,
             "reasoning": "The application allows any user to set their role to 'admin' by simply logging in with the username 'admin', bypassing proper authentication checks."
           },
-          "latency_ms": 687.2,
+          "latency_ms": 725.8,
           "vuln_class_pred": "Authentication Bypass",
           "severity_pred": "high",
           "confidence": 9,
@@ -41,16 +41,21 @@
           "parse_error": false
         },
         "flash": {
-          "raw": "```json\n{\"vuln_class\": \"Crypt",
-          "parsed": null,
-          "latency_ms": 1884.2,
-          "vuln_class_pred": null,
-          "severity_pred": null,
-          "confidence": null,
+          "raw": "```json\n{\n  \"vuln_class\": \"Authentication Bypass\",\n  \"severity\": \"critical\",\n  \"confidence\": 10,\n  \"reasoning\": \"The application uses a hardcoded, default secret key ('dev-secret-key'). This allows an attacker to forge session cookies, bypass authentication, and potentially impersonate any user, including 'admin'.\"\n}\n```",
+          "parsed": {
+            "vuln_class": "Authentication Bypass",
+            "severity": "critical",
+            "confidence": 10,
+            "reasoning": "The application uses a hardcoded, default secret key ('dev-secret-key'). This allows an attacker to forge session cookies, bypass authentication, and potentially impersonate any user, including 'admin'."
+          },
+          "latency_ms": 908.9,
+          "vuln_class_pred": "Authentication Bypass",
+          "severity_pred": "critical",
+          "confidence": 10,
           "vuln_class_correct": false,
           "severity_correct": false,
           "both_correct": false,
-          "parse_error": true
+          "parse_error": false
         }
       }
     },
@@ -67,7 +72,7 @@
             "confidence": 9,
             "reasoning": "The code follows redirects automatically, allowing an attacker to control the redirect target and potentially access internal resources via HTTP."
           },
-          "latency_ms": 557.8,
+          "latency_ms": 837.6,
           "vuln_class_pred": "SSRF",
           "severity_pred": "high",
           "confidence": 9,
@@ -77,16 +82,21 @@
           "parse_error": false
         },
         "flash": {
-          "raw": "__ERROR__: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}",
-          "parsed": null,
-          "latency_ms": 556.7,
-          "vuln_class_pred": null,
-          "severity_pred": null,
-          "confidence": null,
-          "vuln_class_correct": false,
-          "severity_correct": false,
-          "both_correct": false,
-          "parse_error": true
+          "raw": "```json\n{\n  \"vuln_class\": \"Information Disclosure\",\n  \"severity\": \"high\",\n  \"confidence\": 9,\n  \"reasoning\": \"The API_TOKEN is sent over unencrypted HTTP if a redirect from HTTPS to HTTP occurs. This exposes the sensitive token to network eavesdropping.\"\n}\n```",
+          "parsed": {
+            "vuln_class": "Information Disclosure",
+            "severity": "high",
+            "confidence": 9,
+            "reasoning": "The API_TOKEN is sent over unencrypted HTTP if a redirect from HTTPS to HTTP occurs. This exposes the sensitive token to network eavesdropping."
+          },
+          "latency_ms": 6444.1,
+          "vuln_class_pred": "Information Disclosure",
+          "severity_pred": "high",
+          "confidence": 9,
+          "vuln_class_correct": true,
+          "severity_correct": true,
+          "both_correct": true,
+          "parse_error": false
         }
       }
     },
@@ -103,7 +113,7 @@
             "confidence": 9,
             "reasoning": "Basic Auth credentials are sent to any redirected URL, potentially exposing them to malicious partner APIs."
           },
-          "latency_ms": 474.2,
+          "latency_ms": 579.0,
           "vuln_class_pred": "Authentication Bypass",
           "severity_pred": "critical",
           "confidence": 9,
@@ -115,7 +125,7 @@
         "flash": {
           "raw": "__ERROR__: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}",
           "parsed": null,
-          "latency_ms": 1566.1,
+          "latency_ms": 6294.3,
           "vuln_class_pred": null,
           "severity_pred": null,
           "confidence": null,
@@ -139,7 +149,7 @@
             "confidence": 10,
             "reasoning": "Disabling certificate verification (cert_reqs='CERT_NONE', assert_hostname=False) allows for Man-in-the-Middle attacks, compromising data confidentiality and integrity."
           },
-          "latency_ms": 1901.3,
+          "latency_ms": 693.6,
           "vuln_class_pred": "Cryptographic Failure",
           "severity_pred": "high",
           "confidence": 10,
@@ -149,16 +159,21 @@
           "parse_error": false
         },
         "flash": {
-          "raw": "{\"vuln_class\": \"Crypt",
-          "parsed": null,
-          "latency_ms": 1658.0,
-          "vuln_class_pred": null,
-          "severity_pred": null,
-          "confidence": null,
-          "vuln_class_correct": false,
-          "severity_correct": false,
-          "both_correct": false,
-          "parse_error": true
+          "raw": "```json\n{\n  \"vuln_class\": \"Cryptographic Failure\",\n  \"severity\": \"critical\",\n  \"confidence\": 10,\n  \"reasoning\": \"Disabling SSL certificate verification (CERT_NONE, assert_hostname=False) makes the connection vulnerable to Man-in-the-Middle attacks, compromising data confidentiality and integrity.\"\n}\n```",
+          "parsed": {
+            "vuln_class": "Cryptographic Failure",
+            "severity": "critical",
+            "confidence": 10,
+            "reasoning": "Disabling SSL certificate verification (CERT_NONE, assert_hostname=False) makes the connection vulnerable to Man-in-the-Middle attacks, compromising data confidentiality and integrity."
+          },
+          "latency_ms": 929.0,
+          "vuln_class_pred": "Cryptographic Failure",
+          "severity_pred": "critical",
+          "confidence": 10,
+          "vuln_class_correct": true,
+          "severity_correct": true,
+          "both_correct": true,
+          "parse_error": false
         }
       }
     },
@@ -175,7 +190,7 @@
             "confidence": 10,
             "reasoning": "The application allows both RS256 and HS256. An attacker can forge a token using the public key as an HS256 secret, bypassing authentication."
           },
-          "latency_ms": 655.1,
+          "latency_ms": 596.0,
           "vuln_class_pred": "Authentication Bypass",
           "severity_pred": "critical",
           "confidence": 10,
@@ -185,9 +200,9 @@
           "parse_error": false
         },
         "flash": {
-          "raw": "{\"vuln_class\": \"Authentication Bypass\",",
+          "raw": "__ERROR__: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}",
           "parsed": null,
-          "latency_ms": 1516.4,
+          "latency_ms": 6254.1,
           "vuln_class_pred": null,
           "severity_pred": null,
           "confidence": null,
@@ -211,7 +226,7 @@
             "confidence": 9,
             "reasoning": "The URL parsing regex exhibits catastrophic backtracking with a long authority string, leading to a denial-of-service vulnerability."
           },
-          "latency_ms": 477.0,
+          "latency_ms": 631.3,
           "vuln_class_pred": "ReDoS",
           "severity_pred": "high",
           "confidence": 9,
@@ -221,9 +236,9 @@
           "parse_error": false
         },
         "flash": {
-          "raw": "```json\n{\"vuln_class\": \"Re",
+          "raw": "__ERROR__: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}",
           "parsed": null,
-          "latency_ms": 1716.8,
+          "latency_ms": 777.0,
           "vuln_class_pred": null,
           "severity_pred": null,
           "confidence": null,
@@ -247,7 +262,7 @@
             "confidence": 10,
             "reasoning": "The `urlize` filter uses a regex that can backtrack catastrophically on long inputs, leading to a denial-of-service vulnerability."
           },
-          "latency_ms": 590.2,
+          "latency_ms": 589.3,
           "vuln_class_pred": "ReDoS",
           "severity_pred": "high",
           "confidence": 10,
@@ -257,9 +272,9 @@
           "parse_error": false
         },
         "flash": {
-          "raw": "{\"vuln_class\": \"ReDoS\",",
+          "raw": "__ERROR__: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}",
           "parsed": null,
-          "latency_ms": 1689.1,
+          "latency_ms": 498.2,
           "vuln_class_pred": null,
           "severity_pred": null,
           "confidence": null,
@@ -283,7 +298,7 @@
             "confidence": 10,
             "reasoning": "The code fails to verify the proxy's SSL certificate, allowing Man-in-the-Middle attacks to intercept and tamper with sensitive data."
           },
-          "latency_ms": 562.8,
+          "latency_ms": 868.8,
           "vuln_class_pred": "Cryptographic Failure",
           "severity_pred": "critical",
           "confidence": 10,
@@ -293,16 +308,21 @@
           "parse_error": false
         },
         "flash": {
-          "raw": "```json\n{\n  \"vuln_class",
-          "parsed": null,
-          "latency_ms": 1663.3,
-          "vuln_class_pred": null,
-          "severity_pred": null,
-          "confidence": null,
-          "vuln_class_correct": false,
+          "raw": "```json\n{\n  \"vuln_class\": \"Cryptographic Failure\",\n  \"severity\": \"critical\",\n  \"confidence\": 10,\n  \"reasoning\": \"Lack of HTTPS proxy certificate verification allows MITM attacks, enabling full data interception and modification, including credentials, compromising confidentiality and integrity.\"\n}\n```",
+          "parsed": {
+            "vuln_class": "Cryptographic Failure",
+            "severity": "critical",
+            "confidence": 10,
+            "reasoning": "Lack of HTTPS proxy certificate verification allows MITM attacks, enabling full data interception and modification, including credentials, compromising confidentiality and integrity."
+          },
+          "latency_ms": 1207.1,
+          "vuln_class_pred": "Cryptographic Failure",
+          "severity_pred": "critical",
+          "confidence": 10,
+          "vuln_class_correct": true,
           "severity_correct": false,
           "both_correct": false,
-          "parse_error": true
+          "parse_error": false
         }
       }
     },
@@ -319,7 +339,7 @@
             "confidence": 9,
             "reasoning": "Outdated certifi bundle trusts a compromised CA (TrustCor), allowing MITM attacks and impersonation of any domain."
           },
-          "latency_ms": 636.9,
+          "latency_ms": 863.6,
           "vuln_class_pred": "Cryptographic Failure",
           "severity_pred": "high",
           "confidence": 9,
@@ -329,16 +349,21 @@
           "parse_error": false
         },
         "flash": {
-          "raw": "{\"vuln_class\": \"Cryptographic Failure\",",
-          "parsed": null,
-          "latency_ms": 1505.9,
-          "vuln_class_pred": null,
-          "severity_pred": null,
-          "confidence": null,
+          "raw": "```json\n{\n  \"vuln_class\": \"Other\",\n  \"severity\": \"high\",\n  \"confidence\": 9,\n  \"reasoning\": \"The use of an outdated certifi bundle (pre-2022.12.07) that includes the compromised TrustCor root CA allows for potential MITM attacks, as TrustCor could issue valid TLS certificates for any domain.\"\n}\n```",
+          "parsed": {
+            "vuln_class": "Other",
+            "severity": "high",
+            "confidence": 9,
+            "reasoning": "The use of an outdated certifi bundle (pre-2022.12.07) that includes the compromised TrustCor root CA allows for potential MITM attacks, as TrustCor could issue valid TLS certificates for any domain."
+          },
+          "latency_ms": 6101.5,
+          "vuln_class_pred": "Other",
+          "severity_pred": "high",
+          "confidence": 9,
           "vuln_class_correct": false,
           "severity_correct": false,
           "both_correct": false,
-          "parse_error": true
+          "parse_error": false
         }
       }
     },
@@ -355,7 +380,7 @@
             "confidence": 9,
             "reasoning": "A crafted multipart request can bypass MAX_CONTENT_LENGTH, leading to excessive memory allocation and potential denial of service."
           },
-          "latency_ms": 529.5,
+          "latency_ms": 670.9,
           "vuln_class_pred": "Other",
           "severity_pred": "high",
           "confidence": 9,
@@ -365,16 +390,21 @@
           "parse_error": false
         },
         "flash": {
-          "raw": "{\"vuln_class\": \"Other\",",
-          "parsed": null,
-          "latency_ms": 1650.8,
-          "vuln_class_pred": null,
-          "severity_pred": null,
-          "confidence": null,
-          "vuln_class_correct": false,
-          "severity_correct": false,
-          "both_correct": false,
-          "parse_error": true
+          "raw": "```json\n{\n  \"vuln_class\": \"Other\",\n  \"severity\": \"high\",\n  \"confidence\": 9,\n  \"reasoning\": \"The vulnerability described is a denial-of-service (DoS) due to excessive memory allocation in Werkzeug's multipart parser, bypassing MAX_CONTENT_LENGTH. This can crash the server.\"\n}\n```",
+          "parsed": {
+            "vuln_class": "Other",
+            "severity": "high",
+            "confidence": 9,
+            "reasoning": "The vulnerability described is a denial-of-service (DoS) due to excessive memory allocation in Werkzeug's multipart parser, bypassing MAX_CONTENT_LENGTH. This can crash the server."
+          },
+          "latency_ms": 6337.0,
+          "vuln_class_pred": "Other",
+          "severity_pred": "high",
+          "confidence": 9,
+          "vuln_class_correct": true,
+          "severity_correct": true,
+          "both_correct": true,
+          "parse_error": false
         }
       }
     },
@@ -391,7 +421,7 @@
             "confidence": 10,
             "reasoning": "The `header_value` is directly used in HTTP headers without sanitization, allowing for HTTP header injection and request smuggling."
           },
-          "latency_ms": 447.1,
+          "latency_ms": 1390.5,
           "vuln_class_pred": "Injection",
           "severity_pred": "critical",
           "confidence": 10,
@@ -401,16 +431,21 @@
           "parse_error": false
         },
         "flash": {
-          "raw": "{\"vuln_class\": \"Injection\",",
-          "parsed": null,
-          "latency_ms": 1761.1,
-          "vuln_class_pred": null,
-          "severity_pred": null,
-          "confidence": null,
+          "raw": "```json\n{\n  \"vuln_class\": \"Other\",\n  \"severity\": \"critical\",\n  \"confidence\": 10,\n  \"reasoning\": \"CRLF injection in header_value allows an attacker to inject arbitrary headers and potentially smuggle requests, leading to severe security impacts like cache poisoning or bypassing security controls.\"\n}\n```",
+          "parsed": {
+            "vuln_class": "Other",
+            "severity": "critical",
+            "confidence": 10,
+            "reasoning": "CRLF injection in header_value allows an attacker to inject arbitrary headers and potentially smuggle requests, leading to severe security impacts like cache poisoning or bypassing security controls."
+          },
+          "latency_ms": 5573.7,
+          "vuln_class_pred": "Other",
+          "severity_pred": "critical",
+          "confidence": 10,
           "vuln_class_correct": false,
           "severity_correct": false,
           "both_correct": false,
-          "parse_error": true
+          "parse_error": false
         }
       }
     },
@@ -427,7 +462,7 @@
             "confidence": 10,
             "reasoning": "yaml.FullLoader allows arbitrary object instantiation via !!python/object/new and !!python/object/apply, leading to remote code execution."
           },
-          "latency_ms": 404.9,
+          "latency_ms": 472.4,
           "vuln_class_pred": "Deserialization",
           "severity_pred": "critical",
           "confidence": 10,
@@ -437,58 +472,23 @@
           "parse_error": false
         },
         "flash": {
-          "raw": "{\"vuln_class\": \"Deserialization",
-          "parsed": null,
-          "latency_ms": 1639.0,
-          "vuln_class_pred": null,
-          "severity_pred": null,
-          "confidence": null,
-          "vuln_class_correct": false,
-          "severity_correct": false,
-          "both_correct": false,
-          "parse_error": true
+          "raw": "```json\n{\n  \"vuln_class\": \"Deserialization\",\n  \"severity\": \"critical\",\n  \"confidence\": 10,\n  \"reasoning\": \"The use of yaml.FullLoader with untrusted input allows arbitrary object instantiation via !!python/object/new, leading to remote code execution (RCE) as demonstrated by the `os.system` example.\"\n}\n```",
+          "parsed": {
+            "vuln_class": "Deserialization",
+            "severity": "critical",
+            "confidence": 10,
+            "reasoning": "The use of yaml.FullLoader with untrusted input allows arbitrary object instantiation via !!python/object/new, leading to remote code execution (RCE) as demonstrated by the `os.system` example."
+          },
+          "latency_ms": 6593.6,
+          "vuln_class_pred": "Deserialization",
+          "severity_pred": "critical",
+          "confidence": 10,
+          "vuln_class_correct": true,
+          "severity_correct": true,
+          "both_correct": true,
+          "parse_error": false
         }
       }
     }
-  ],
-  "pivot_rationale": {
-    "timestamp_utc": "2026-04-15T04:46:40.425706+00:00",
-    "decision": "Drop Flash from the CVE study battery. Pivot comparison to Flash Lite vs GPT-4o-mini vs Claude Haiku vs (Phase 3) a fine-tuned model.",
-    "evidence": [
-      "Flash returned 503 UNAVAILABLE on 11/12 calls after 5 retries \u2014 endpoint is saturated and not benchmark-reliable.",
-      "The one Flash response that got through was truncated at max_tokens=256 mid-JSON, unparseable.",
-      "Flash Lite on the same run scored 9/12 vuln_class, 5/12 severity, 3/12 both \u2014 while self-reporting confidence 9-10 on every call.",
-      "Flash Lite's uniform high confidence on wrong severity answers is the exact `dangerous_rate` failure mode the pre-registration targets, visible in n=12."
-    ],
-    "new_comparison_set": [
-      "gemini-2.5-flash-lite",
-      "gpt-4o-mini",
-      "claude-haiku",
-      "fine_tuned_tbd_phase3"
-    ],
-    "dropped": [
-      "gemini-2.5-flash"
-    ],
-    "why_more_interesting": "Original hypothesis (Flash vs Flash Lite) was a capability gap. New hypothesis (Flash Lite vs better-calibrated models) is a calibration gap \u2014 directly aligned with the pre-registered `dangerous_rate` metric. Flash Lite is cheap + accurate on class + confidently wrong on severity; that is exactly where a calibration-aware router earns its keep.",
-    "amendments": [
-      {
-        "timestamp_utc": "2026-04-15T04:50:56.653700+00:00",
-        "reversal": "Flash REINSTATED in the Phase 2 model roster.",
-        "reason": "On review, the 503 UNAVAILABLE rate on 11/12 Flash calls was infrastructure timing (saturated endpoint during peak hours) and the one returned response was truncated by a fixable 256-token output budget \u2014 neither is a capability signal. Dropping Flash before measuring it would leave the research question 'does the larger Gemini model inherit Flash Lite's overconfidence or self-correct?' permanently unanswered.",
-        "actions_taken": [
-          "GeminiFlash adapter: max_tokens 256 \u2192 512 (commit 25941d8)",
-          "GeminiFlash adapter: 3s minimum interval between calls on same instance (commit 25941d8)",
-          "Flash will be re-measured off-peak before Phase 2 commit #3"
-        ],
-        "roster_restored": [
-          "gemini-2.5-flash-lite",
-          "gemini-2.5-flash",
-          "gpt-4o-mini",
-          "claude-haiku",
-          "fine_tuned_tbd_phase3"
-        ],
-        "supersedes": "The earlier 'dropped: [gemini-2.5-flash]' decision in this same pivot_rationale block is rescinded."
-      }
-    ]
-  }
+  ]
 }

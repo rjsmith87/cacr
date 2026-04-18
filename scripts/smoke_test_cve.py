@@ -5,6 +5,35 @@ Throwaway diagnostic. Does NOT touch pipelines/. Confirms whether the prior
 commit to Phase 2 (CVE study + RouteLLM comparison).
 
 Usage: python scripts/smoke_test_cve.py
+
+────────────────────────────────────────────────────────────────────────
+OFF-PEAK RE-RUN CHECKLIST (Flash reinstated after commit 4867197)
+────────────────────────────────────────────────────────────────────────
+First run (daytime) hit two infrastructure issues on Flash that were not
+capability signals:
+  - 11/12 calls returned 503 UNAVAILABLE (peak-hour endpoint saturation)
+  - 1/12 response was truncated mid-JSON at max_tokens=256
+
+Both are fixed in commit 25941d8:
+  - GeminiFlash max_tokens bumped 256 → 512
+  - GeminiFlash enforces 3s minimum interval between calls
+
+To re-run off-peak (target: late evening / early morning PT, Gemini
+endpoint load is lowest):
+
+  1. cd /Users/robertsmith/Desktop/slm-router
+  2. set -a; source .env; set +a
+  3. ./venv/bin/python scripts/smoke_test_cve.py
+  4. Verify docs/smoke_test_raw.json now has a Flash row with real
+     vuln_class / severity / confidence values (no __ERROR__, no None).
+  5. Report the comparison table back. Expected cost: <$0.20, runtime
+     ~1 min Flash Lite + ~1 min Flash (3s pacing × 12 calls).
+
+If Flash still 503s at scale after the fix, escalate: options are
+(a) wait longer for off-peak, (b) drop retry-backoff base from 4s to
+6s, (c) reconsider dropping Flash — but ONLY after this run confirms
+the problem is persistent, not transient.
+────────────────────────────────────────────────────────────────────────
 """
 from __future__ import annotations
 
