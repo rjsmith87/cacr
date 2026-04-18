@@ -15,7 +15,7 @@ from models.base import Model
 
 _MAX_RETRIES = 5
 _BASE_DELAY = 4.0  # seconds; doubles each attempt → 4, 8, 16, 32, 64
-_MIN_CALL_INTERVAL = 3.0  # Flash-specific rate-limit pacing (seconds)
+_MIN_CALL_INTERVAL = 6.0  # Flash-specific rate-limit pacing (seconds)
 
 
 def _extract_retry_delay(exc: Exception) -> float | None:
@@ -33,7 +33,7 @@ class GeminiFlash(Model):
     def __init__(
         self,
         model_id: str = "gemini-2.5-flash",
-        max_tokens: int = 512,
+        max_tokens: int = 1024,
         temperature: float = 0.0,
         api_key: str | None = None,
     ) -> None:
@@ -44,10 +44,17 @@ class GeminiFlash(Model):
             )
         self._client = genai.Client(api_key=key)
         self._model_id = model_id
-        self._config = genai.types.GenerateContentConfig(
-            max_output_tokens=max_tokens,
-            temperature=temperature,
-        )
+        # Disable Gemini 2.5 reasoning tokens — they consume the output
+        # budget before visible JSON completes, truncating structured
+        # responses. CVE classification does not need chain-of-thought.
+        cfg_kwargs = {"max_output_tokens": max_tokens, "temperature": temperature}
+        try:
+            cfg_kwargs["thinking_config"] = genai.types.ThinkingConfig(
+                thinking_budget=0
+            )
+        except AttributeError:
+            pass  # older SDK without ThinkingConfig; safe to skip
+        self._config = genai.types.GenerateContentConfig(**cfg_kwargs)
         self._last_call_ts: float = 0.0
 
     def generate(self, prompt: str) -> str:
