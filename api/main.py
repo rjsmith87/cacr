@@ -1,6 +1,7 @@
 """CACR — Flask backend.
 
-Endpoints (10):
+Endpoints (11):
+  GET  /                          — service index listing all endpoints
   GET  /health                    — Render health check
   GET  /api/health                — status, model count, task count, total calls
   GET  /api/capability-matrix     — models x tasks x scores heatmap data
@@ -57,6 +58,29 @@ def _bq_client():
     # GOOGLE_APPLICATION_CREDENTIALS_JSON (Render) → ADC (local)
     from results.bq_writer import _build_bq_client
     return _build_bq_client(project)
+
+
+# ── GET / (service index) ──────────────────────────────────────────
+
+@app.route("/")
+def index():
+    return jsonify({
+        "service": "CACR API",
+        "endpoints": [
+            "/health",
+            "/api/health",
+            "/api/capability-matrix",
+            "/api/calibration",
+            "/api/pipeline-cost",
+            "/api/cost-matrix",
+            "/api/route",
+            "/api/findings",
+            "/api/explain-calibration",
+            "/api/explain",
+        ],
+        "docs": "https://github.com/rjsmith87/cacr",
+        "dashboard": "https://cacr-dashboard.onrender.com",
+    })
 
 
 # ── GET /health (Render health check) ──────────────────────────────
