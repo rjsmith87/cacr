@@ -1,100 +1,72 @@
 # Changelog
 
-## 2026-04-09
+## 2026-04-14
 
-### Initial Framework
-- Task ABC (prompt, eval, threshold, family, complexity) and Model ABC (generate, tier, cost_per_token)
-- IntentClassification task (5 categories, 10 examples) and JsonExtraction task (schema validation, 5 examples)
-- Claude Haiku adapter via Anthropic SDK
-- Runner: tasks × models loop with timing, JSONL stdout output
+- Pre-registered CVE study success criteria and thresholds in the
+  BigQuery schema: `dangerous_rate`, `silent_miss_rate`, 10-bin ECE,
+  `overconfidence_score`, and RouteLLM shadow decisions.
+- Runner: smoke test rerun, Flash thinking tokens disabled,
+  `max_tokens` raised to 1024, rate-limit pacing tuned.
 
-### Multi-Model Support
-- Added Gemini Flash adapter (google-genai SDK, direct API)
-- Added Gemini Pro adapter (later replaced)
-- Added GPT-4o-mini adapter (OpenAI SDK)
-- Runner: graceful per-model init errors, continues with available models
+## 2026-04-12
 
-### Confidence Calibration
-- Self-reported confidence scoring (1-10) via second model call per example
-- Pearson correlation (calibration_r) between confidence and eval scores
-- Per-difficulty calibration breakdown (easy/medium/hard)
-
-### Code & Security Tasks
-- Replaced customer service tasks with CodeReview, SecurityVuln, CodeSummarization
-- 15 examples per task with mixed difficulty levels
-
-### Gemini Debugging & Flash Lite
-- Fixed: Vertex AI 403 → switched to direct Gemini API with GOOGLE_API_KEY
-- Fixed: 503 retry logic (5 attempts, 4s base exponential backoff)
-- Fixed: calibration_r=1.0 artifact from 503 dropout small-sample correlation
-- Replaced gemini-2.5-pro (perpetual 503) with gemini-2.5-flash-lite
-- Flash Lite emerged as cost-optimal model across entire battery
-
-### BigQuery Integration
-- bq_writer.py: streaming insert to benchmark_calls + benchmark_summaries tables
-- ADC re-authenticated with BigQuery scopes
-- User account granted bigquery.dataEditor + bigquery.user + serviceUsageConsumer
+- Repo audit and cleanup (8 fixes):
+  - `requirements.txt` added for runner deps; `requirements-api.txt`
+    kept for the API.
+  - `render.yaml` renamed `GOOGLE_APPLICATION_CREDENTIALS` to
+    `GOOGLE_APPLICATION_CREDENTIALS_JSON` to match `bq_writer.py`.
+  - `.env.example` documents both the Render JSON path and the
+    local ADC path.
+  - Removed empty `config.py`; renamed `gemini_pro_adapter.py` to
+    `gemini_flash_lite_adapter.py` and updated all imports.
+  - `EXPLAIN_MODEL` constant extracted from `api/main.py`.
+  - `/api/route` now consumes inferred complexity via `CACRRouter`
+    with a `LookupTableRouter` fallback.
+  - `tests/test_python.py` added (14 tests); `python-ci.yml` runs
+    import smoke test + pytest on push/PR to main.
+  - `runtime.txt` pins `python-3.13.2`; README documents the
+    720-vs-360 call doubling and input-token-only pricing caveats.
 
 ## 2026-04-10
 
-### Expanded Task Battery
-- 30 examples per task (10 easy / 10 medium / 10 hard)
-- Realistic synthetic code with real bug patterns, CVE-style vulnerabilities, obfuscated names
+- Task battery expanded to 30 examples per task (10 easy / 10 medium
+  / 10 hard) across CodeReview, SecurityVuln, and CodeSummarization.
+- Pipeline simulation: severity → bug type → CVE detection → fix,
+  with four strategies (all-haiku, all-lite, all-gpt4o-mini, cacr).
+- CVE case study: 12 real Python CVEs across Flask, Requests,
+  urllib3, Jinja2, PyJWT, PyYAML, Werkzeug, and certifi. Two-step
+  pipeline (detect → explain).
+- Router: `LookupTableRouter` baseline plus `CACRRouter`
+  (scikit-learn logistic regression). Escalation rule: if best
+  tier-1 score < 0.6 on a task, escalate to the cheapest tier-2
+  model scoring > 0.7.
+- Automatic complexity inference in `router/complexity.py`: LOC,
+  control-flow keyword count, import count, and dangerous-pattern
+  override (`os.system`, `pickle`, `eval`, raw SQL). Weighted vote
+  per signal.
+- Flask API: 10 endpoints, BigQuery-backed, Claude Sonnet ELI5 via
+  `POST /api/explain`.
+- React dashboard: Vite + React 19 + Recharts + Tailwind 4, six
+  tabs (Capability Matrix, Calibration Explorer, Cascade Cost Model,
+  Pipeline Cost, Router Playground, Model Efficiency).
+- Render deployment: `cacr-api` (Flask/gunicorn) and `cacr-dashboard`
+  (Vite static site). Environment sync via
+  `scripts/sync_env_to_render.py`. `/health` endpoint for Render
+  health checks.
 
-### Pipeline Simulation
-- 3-step code review pipeline: severity → bug type → fix
-- Three strategies: all-haiku, all-lite, cacr-routed
-- Results written to BigQuery pipeline_results table
+## 2026-04-09
 
-### Cost Model & Router
-- Cascade-aware expected cost formula with retry pricing
-- Cost matrix CSV output
-- LookupTableRouter (baseline) + CACRRouter (logistic regression)
-
-### Flask API
-- 7 endpoints: health, capability-matrix, calibration, pipeline-cost, cost-matrix, route, findings
-- Flask + flask-cors + gunicorn
-
-### React Dashboard
-- Vite + React + Recharts + Tailwind
-- 5 views: Capability Matrix, Calibration Explorer, Pipeline Cost, Router Playground, Model Efficiency
-
-### Infrastructure
-- Render deployment config (render.yaml)
-- Environment sync script (scripts/sync_env_to_render.py)
-- Makefile with benchmark, api-dev, dashboard-dev targets
-
-### Documentation
-- README.md, METHODOLOGY.md, CLAUDE.md, CONTEXT.md, FINDINGS.md, CHANGELOG.md
-
-### CVE Case Study (expanded to 12 CVEs)
-- 12 real CVEs: Flask, Requests, urllib3, Jinja2, PyJWT, PyYAML, Werkzeug, certifi
-- 2-step CVE pipeline: detect → explain, 3 routing strategies, all 4 models
-- Key finding: Flash missed 6/12 CVEs (silent failures), Flash Lite detected 12/12
-- BQ writer updated with GOOGLE_APPLICATION_CREDENTIALS_JSON for Render deployment
-
-### Render Deployment
-- Created personal GCP project (cacr-bq-personal) with SA key for BQ access
-- Services: cacr-api (Flask/gunicorn) and cacr-dashboard (Vite static)
-- Live URLs: https://cacr-api.onrender.com, https://cacr-dashboard.onrender.com
-- Added /health endpoint for Render health checks
-
-### Blog Post
-- BLOG_DRAFT.md: "The $0.00000004 Security Scanner" — data-driven writeup of CVE findings
-
-### 4-Step Pipeline with CVE Detection + Escalation Router
-- Pipeline expanded from 3 to 4 steps: severity → bug type → CVE detection → fix
-- Added GPT-4o-mini as 4th routing strategy (all-gpt4o-mini)
-- CACR router escalation logic: if best tier-1 score < 0.6, escalate to cheapest
-  tier-2 model scoring > 0.7
-- 3 snippets now include security vulnerabilities (SQL injection, XSS, pickle RCE)
-- GPT-4o-mini anomalously slow (13.6s) with worst cascade failure rate
-- CACR matches Flash Lite cost at lower latency via model reuse
-
-### Automatic Complexity Inference
-- router/complexity.py: infer_complexity() classifies code as easy/medium/hard
-  using LOC, control flow keyword count, dangerous pattern detection, import count
-- Weighted voting with dangerous pattern override (os.system, pickle, eval → hard)
-- /api/route accepts complexity="auto" (default) — infers from code, returns result
-- Router Playground: "Auto" is now the default complexity option
-- Inferred complexity badge displayed in routing results
+- Initial framework: `Task` and `Model` abstract base classes;
+  runner loop with JSONL stdout output.
+- Four model adapters: Claude Haiku (Anthropic SDK), Gemini 2.5
+  Flash and 2.5 Flash Lite (google-genai, direct Gemini API),
+  GPT-4o-mini (OpenAI SDK). Gemini 2.5 Pro was replaced with Flash
+  Lite after persistent 503s.
+- Self-reported confidence scoring (1 to 10) via a second model call
+  per example. Pearson r between confidence and eval score, computed
+  overall and per difficulty.
+- BigQuery ingestion: `benchmark_calls` and `benchmark_summaries`
+  tables via `bq_writer.py`.
+- Gemini retry logic: 5 attempts, 4s base exponential backoff, with
+  server-hint delay parsing. Fixed a `cal_r=1.000` artifact caused by
+  503 dropouts leaving too few valid confidence data points.
