@@ -2,7 +2,7 @@
 
 ## Headline: Flash Lite is the best value model by a wide margin
 
-**Gemini 2.5 Flash Lite** at **$0.04/MTok** matches Claude Haiku on CodeReview (0.90) and SecurityVuln (0.93), and **leads all models** on CodeSummarization (0.42 ROUGE-L). At roughly 25x cheaper than Haiku and 4x cheaper than GPT-4o-mini, it is the cost-optimal default for the entire task battery.
+**Gemini 2.5 Flash Lite** at **$0.04/MTok** matches Claude Haiku on CodeReview (0.90 vs 0.90), comes within 0.07 on SecurityVuln (0.93 vs 1.00), and **leads all models** on CodeSummarization (0.42 ROUGE-L). At roughly 25x cheaper than Haiku and 4x cheaper than GPT-4o-mini, it is the cost-optimal default for the entire task battery.
 
 ## Capability Matrix (30 examples/task, 4 models)
 
@@ -62,7 +62,7 @@ gemini-2.5-pro was consistently returning 503 (UNAVAILABLE) on every call despit
 
 ## Key Takeaway for Routing
 
-For a 3-step agentic pipeline, the cascade-aware router defaults to Flash Lite for all steps. The cost savings are ~25x per token vs Haiku with no accuracy loss on classification tasks. Even when accounting for cascade failure retries, Flash Lite remains cost-optimal.
+For a 3-step agentic pipeline, the cascade-aware router defaults to Flash Lite for all steps. The cost savings are ~25x per token vs Haiku with negligible accuracy loss on classification tasks (identical on CodeReview at 0.90, within 0.07 on SecurityVuln at 0.93 vs 1.00). Even when accounting for cascade failure retries, Flash Lite remains cost-optimal.
 
 The remaining opportunity is in calibration-based dynamic routing: GPT-4o-mini's strong calibration on hard examples (H:+0.82) means it could serve as a "confidence-aware escalation target" when Flash Lite reports low confidence — but this requires switching from self-reported confidence to logprob-based confidence extraction.
 
