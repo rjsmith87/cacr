@@ -199,10 +199,20 @@ export default function RouterPlayground() {
                   )}
                 </div>
               )}
+              {/* Below-threshold warning banner */}
+              {result.below_threshold && result.warning && (
+                <div className="bg-amber-950/40 border border-amber-700/50 rounded-lg px-4 py-3 text-amber-300 text-sm">
+                  <div className="font-semibold mb-1">⚠ All models below threshold</div>
+                  <div className="text-amber-200/90">{result.warning}</div>
+                </div>
+              )}
+
               <ELI5Panel
                 dataSummary={`Task: ${form.task}, Recommended model: ${result.recommended_model}, Expected cost: $${result.expected_cost?.toFixed(6)}, Complexity: ${result.inferred_complexity || result.complexity || 'unknown'}, Reasoning: ${result.reasoning}`}
-                promptHint="You are explaining an AI routing decision to a non-technical person. In plain English, explain why this model was picked for this task, what it costs, and whether this is a good deal. Don't use technical jargon — explain it like you're talking to a product manager."
-                refreshKey={result.recommended_model}
+                promptHint="You are explaining an AI routing decision to a non-technical person. In plain English, explain why this model was picked for this task, what it costs, and whether this is a sensible recommendation. Don't use technical jargon — explain it like you're talking to a product manager."
+                taskName={form.task}
+                warning={result.warning}
+                refreshKey={`${result.recommended_model}|${form.task}|${result.below_threshold ? 'below' : 'ok'}`}
               />
             </div>
           )}

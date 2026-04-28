@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-export default function ELI5Panel({ dataSummary, promptHint, refreshKey }) {
+export default function ELI5Panel({ dataSummary, promptHint, taskName, warning, refreshKey }) {
   const [explanation, setExplanation] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -16,10 +16,14 @@ export default function ELI5Panel({ dataSummary, promptHint, refreshKey }) {
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), 25_000)
 
+    const body = { data_summary: dataSummary, prompt_hint: promptHint }
+    if (taskName) body.task_name = taskName
+    if (warning) body.warning = warning
+
     fetch(`${API}/api/explain`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data_summary: dataSummary, prompt_hint: promptHint }),
+      body: JSON.stringify(body),
       signal: ctrl.signal,
     })
       .then(res => {
@@ -37,7 +41,7 @@ export default function ELI5Panel({ dataSummary, promptHint, refreshKey }) {
         setLoading(false)
       })
       .finally(() => clearTimeout(timer))
-  }, [dataSummary, promptHint])
+  }, [dataSummary, promptHint, taskName, warning])
 
   useEffect(() => {
     fetchExplanation()

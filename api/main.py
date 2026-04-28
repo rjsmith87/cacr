@@ -338,12 +338,31 @@ def explain_calibration():
 
 # ── POST /api/explain — generic ELI5 endpoint ─────────────────────
 
+# Phrases the explain endpoint must NOT use when paired with a below-threshold
+# warning. These have shown up in production traffic and are the exact kind
+# of misleading framing the warning was added to prevent — "good deal" /
+# "rock-bottom pricing" for a model that's wrong more than half the time
+# is the bug, not the feature.
+_BANNED_PHRASES_WHEN_BELOW_THRESHOLD = (
+    '"good value", "good deal", "adequate performance", "passes our minimum '
+    'standards", "meets our minimum bar", "acceptable quality", "rock-bottom '
+    'pricing", "reliable choice"'
+)
+
+
 @app.route("/api/explain", methods=["POST"])
 def explain():
-    """Generic ELI5: takes 'data_summary' and 'prompt_hint', returns explanation."""
+    """ELI5: takes 'data_summary' + 'prompt_hint' and optional structured
+    'task_name' / 'warning' fields. When `task_name` is supplied it is
+    referenced verbatim in the prompt so the model paraphrase can't drift to
+    the wrong task. When `warning` is supplied (router below-threshold path),
+    the prompt template forces honest framing and bans the marketing-style
+    phrases that previously slipped into low-score explanations."""
     data = request.get_json(force=True)
     summary = data.get("data_summary", "")
     hint = data.get("prompt_hint", "")
+    task_name = data.get("task_name")
+    warning = data.get("warning")
     if not summary:
         abort(400, "Missing 'data_summary'")
 
@@ -353,11 +372,35 @@ def explain():
 
     from anthropic import Anthropic
 
-    prompt = (
-        f"{hint}\n\nHere is the data:\n\n{summary}\n\n"
+    # Build the prompt. Task name (when supplied) is pinned at the top so
+    # Claude can't paraphrase to the wrong task by reading a buried "Task:"
+    # line in the data summary. Warning (when supplied) takes priority over
+    # the optimistic prompt_hint and explicitly forbids marketing language.
+    parts: list[str] = []
+    if task_name:
+        parts.append(
+            f"The task the user submitted is exactly: {task_name}. "
+            f"Reference this task name (or its natural-language paraphrase) "
+            f"in your explanation. Do NOT substitute a different task."
+        )
+    if warning:
+        parts.append(
+            f"IMPORTANT — honest framing required:\n{warning}\n\n"
+            f"All evaluated models perform poorly on this task. Your "
+            f"explanation MUST call this out plainly and recommend caution "
+            f"or human review. Do NOT use any of these phrases: "
+            f"{_BANNED_PHRASES_WHEN_BELOW_THRESHOLD}. Do not characterize "
+            f"the recommended model as a good choice; characterize it as "
+            f"the least-bad available option, and say so."
+        )
+    if hint:
+        parts.append(hint)
+    parts.append(f"Here is the data:\n\n{summary}")
+    parts.append(
         "In 3-4 sentences, give a clear, direct explanation. "
         "Use actual model names and numbers. No jargon."
     )
+    prompt = "\n\n".join(parts)
 
     try:
         client = Anthropic(api_key=api_key)
