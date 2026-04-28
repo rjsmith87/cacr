@@ -361,11 +361,15 @@ def explain_calibration():
 # warning. These have shown up in production traffic and are the exact kind
 # of misleading framing the warning was added to prevent — "good deal" /
 # "rock-bottom pricing" for a model that's wrong more than half the time
-# is the bug, not the feature.
+# is the bug, not the feature. The "winner / matches performance / same
+# result" cluster was added when the same pattern appeared on the Pipeline
+# Cost tab: a 4-strategy comparison framed as "CACR is the clear winner"
+# while every strategy was failing 70-80% of the time.
 _BANNED_PHRASES_WHEN_BELOW_THRESHOLD = (
     '"good value", "good deal", "adequate performance", "passes our minimum '
     'standards", "meets our minimum bar", "acceptable quality", "rock-bottom '
-    'pricing", "reliable choice"'
+    'pricing", "reliable choice", "clear winner", "winner", "matches '
+    'performance", "comparable accuracy", "same result"'
 )
 
 
@@ -405,12 +409,13 @@ def explain():
     if warning:
         parts.append(
             f"IMPORTANT — honest framing required:\n{warning}\n\n"
-            f"All evaluated models perform poorly on this task. Your "
+            f"All evaluated options perform poorly on this task. Your "
             f"explanation MUST call this out plainly and recommend caution "
-            f"or human review. Do NOT use any of these phrases: "
+            f"(human review, escalation to a more capable option, or task "
+            f"reformulation). Do NOT use any of these phrases: "
             f"{_BANNED_PHRASES_WHEN_BELOW_THRESHOLD}. Do not characterize "
-            f"the recommended model as a good choice; characterize it as "
-            f"the least-bad available option, and say so."
+            f"any option as a good choice; characterize the recommended one "
+            f"as the least-bad available option, and say so."
         )
     if hint:
         parts.append(hint)

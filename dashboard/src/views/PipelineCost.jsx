@@ -234,8 +234,24 @@ export default function PipelineCost() {
       </div>
 
       <ELI5Panel
-        dataSummary={strategies.map(s => `${STRATEGY_META[s.strategy]?.label || s.strategy}: cost=$${s.cost?.toFixed(6)}, latency=${s.latency?.toFixed(0)}ms, accuracy=${(s.accuracy*100)?.toFixed(1)}%`).join('\n')}
-        promptHint="You are explaining pipeline cost comparison to a non-technical engineer. Explain what the cost difference means in real terms — if you ran 1 million requests, what would each strategy cost? Which strategy would you pick and why? Be specific with dollar amounts."
+        dataSummary={strategies.map(s =>
+          `${STRATEGY_META[s.strategy]?.label || s.strategy}: ` +
+          `cost=$${s.cost?.toFixed(6)}, ` +
+          `latency=${s.latency?.toFixed(0)}ms, ` +
+          `end-to-end accuracy=${(s.accuracy*100)?.toFixed(1)}%, ` +
+          `cascade fail rate=${(s.cascade_failure_rate*100)?.toFixed(1)}%`
+        ).join('\n')}
+        promptHint={
+          anyBelowThreshold
+            ? "You are explaining a pipeline cost comparison to a non-technical engineer. Every strategy on this pipeline is performing poorly — explain what the cascade fail rate and end-to-end accuracy numbers actually mean, why cost savings on a failing pipeline is saving money to be wrong cheaply, and recommend escalating to a frontier-tier pipeline (Opus 4.7, GPT-5, o3) or reformulating the task. Be specific with the actual percentages."
+            : "You are explaining a pipeline cost comparison to a non-technical engineer. Explain what the cost difference means in real terms — if you ran 1 million requests, what would each strategy cost? Be specific with dollar amounts."
+        }
+        warning={
+          anyBelowThreshold
+            ? `All ${strategies.length} pipeline strategies score below ${PIPELINE_MIN_ACCEPTABLE_ACCURACY.toFixed(2)} end-to-end accuracy on this benchmark, with cascade fail rates between ${(Math.min(...strategies.map(s => s.cascade_failure_rate ?? 1)) * 100).toFixed(0)}% and ${(Math.max(...strategies.map(s => s.cascade_failure_rate ?? 0)) * 100).toFixed(0)}%. The cheapest option here is the least-expensive way to be wrong — cost savings on a failing pipeline is saving money to be wrong cheaply. Recommend escalating to a frontier-tier pipeline (Opus 4.7, GPT-5, o3) or reformulating the task to one where current models perform reliably.`
+            : null
+        }
+        refreshKey={`${anyBelowThreshold ? 'below' : 'ok'}|${strategies.length}`}
       />
     </div>
   )
