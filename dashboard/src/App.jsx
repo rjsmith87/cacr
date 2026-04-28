@@ -8,13 +8,13 @@ import ModelEfficiency from './views/ModelEfficiency'
 import CostModel from './views/CostModel'
 
 const navItems = [
-  { to: '/', label: 'Capability Matrix' },
+  { to: '/', label: 'Cascade Demo', accent: true },
+  { to: '/capability', label: 'Capability Matrix' },
   { to: '/calibration', label: 'Calibration Explorer' },
   { to: '/cost-model', label: 'Cost Model' },
   { to: '/pipeline', label: 'Pipeline Cost' },
   { to: '/router', label: 'Router Playground' },
   { to: '/efficiency', label: 'Model Efficiency' },
-  { to: '/cascade', label: 'Cascade Demo' },
 ]
 
 function App() {
@@ -32,19 +32,22 @@ function App() {
               </div>
             </div>
             <nav className="flex gap-1 -mb-px overflow-x-auto pb-px scrollbar-none">
-              {navItems.map(({ to, label }) => (
+              {navItems.map(({ to, label, accent }) => (
                 <NavLink
                   key={to}
                   to={to}
                   end={to === '/'}
                   className={({ isActive }) =>
-                    `whitespace-nowrap px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                    `whitespace-nowrap px-3 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
                       isActive
                         ? 'border-indigo-500 text-indigo-400'
-                        : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                        : accent
+                          ? 'border-transparent text-indigo-300 hover:text-indigo-200 hover:border-indigo-700'
+                          : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
                     }`
                   }
                 >
+                  {accent && <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-400" aria-hidden="true" />}
                   {label}
                 </NavLink>
               ))}
@@ -54,13 +57,13 @@ function App() {
 
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <Routes>
-            <Route path="/" element={<CapabilityMatrix />} />
+            <Route path="/" element={<CascadeDemo />} />
+            <Route path="/capability" element={<CapabilityMatrix />} />
             <Route path="/calibration" element={<CalibrationExplorer />} />
             <Route path="/cost-model" element={<CostModel />} />
             <Route path="/pipeline" element={<PipelineCost />} />
             <Route path="/router" element={<RouterPlayground />} />
             <Route path="/efficiency" element={<ModelEfficiency />} />
-            <Route path="/cascade" element={<CascadeDemo />} />
           </Routes>
         </main>
 
