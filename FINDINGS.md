@@ -144,31 +144,27 @@ In practice, complexity inference feeds into the escalation logic: if a snippet 
 
 ### Detection Results (step 1: is this code vulnerable?)
 
-| Model               | CVEs Detected | Missed High/Crit | Mean Conf |
-|---------------------|---------------|-------------------|-----------|
-| claude-haiku-4-5    | 12/12         | 0                 | 9.0       |
-| gemini-2.5-flash    | **6/12**      | **2**             | N/A       |
-| gemini-2.5-flash-lite | 12/12       | 0                 | 9.3       |
-| gpt-4o-mini         | 12/12         | 0                 | 8.0       |
+| Model                 | CVEs Detected (n=1) | Mean Conf |
+|-----------------------|---------------------|-----------|
+| claude-haiku-4-5      | 12/12               | 9.0       |
+| gemini-2.5-flash      | 12/12               | 9.3       |
+| gemini-2.5-flash-lite | 12/12               | 9.3       |
+| gpt-4o-mini           | 12/12               | 8.0       |
 
-### Key Finding: Gemini 2.5 Flash misses half of all CVEs
+**All four SLM-tier models detect all 12 CVEs correctly under normal conditions.**
 
-**Gemini 2.5 Flash missed 6 of 12 CVEs**, including 2 high-severity vulnerabilities. The specific misses:
-- **CVE-2018-18074** (Requests auth credential leak on cross-host redirect) — high, MISSED
-- **CVE-2021-33503** (urllib3 ReDoS) — medium, MISSED
-- **CVE-2020-28493** (Jinja2 ReDoS) — medium, MISSED
-- **CVE-2022-23491** (certifi compromised root CA) — medium, MISSED
-- **CVE-2023-25577** (Werkzeug multipart DoS) — high, MISSED
-- **CVE-2020-26137** (urllib3 CRLF injection) — medium, MISSED
+### Correction: the original "Flash misses 6/12" finding was infrastructure noise
 
-Flash's misses are **silent failures** — no structured output, no confidence score, just empty or unparseable responses. This is worse than a high-confidence wrong answer because there's no signal to trigger a retry or escalation.
+An earlier version of this document and BLOG_DRAFT.md reported "Gemini 2.5 Flash silently misses 6/12 CVEs" with empty / unparseable output and `mean_confidence = N/A` on the misses. That finding has been retracted.
 
-The CVEs Flash successfully detected (6/12): CVE-2023-30861, CVE-2023-32681, CVE-2019-11324, CVE-2022-29217, CVE-2021-28363, CVE-2019-20477. These tend to be the most "textbook" examples — the more subtle library-level vulnerabilities are where Flash fails.
+The 6 originally-recorded misses were 503 timeouts and rate-limit failures from the Gemini direct API during the v1 benchmark run, not capability failures. Commit `4867197 docs(runner): amend smoke test rationale — Flash reinstated, 503 failures were infrastructure noise not capability signal` flagged this internally at the time, but the public-facing CVE narrative was never updated to match. A fresh single-attempt sweep of all 12 CVEs (2026-04-28) returned `vulnerable: yes` with confidence 8–10 on every CVE — including all six previously listed as "MISSED": CVE-2018-18074, CVE-2021-33503, CVE-2020-28493, CVE-2022-23491, CVE-2023-25577, CVE-2020-26137.
 
-### Flash Lite vs Flash: the counterintuitive result
+The capability claim doesn't survive contact with current data. The original benchmark log was also not preserved in BigQuery (the `cve_results` and `cve_study_calls` tables are empty for the historical run), so the only artifact of those misses is the prose in the docs themselves. With nothing to cross-check against and the live behavior contradicting the claim, the only honest move is to retract.
 
-Flash Lite at **$0.04/MTok** detects **12/12 CVEs**. Flash at **$0.10/MTok** detects **6/12**. The cheaper, smaller model is strictly better on security vulnerability detection. This isn't a fluke — Flash Lite consistently returns well-structured responses with confidence scores (mean 9.3), while Flash frequently returns unparseable output.
+### Open question: silent failures under sustained load
 
-### Routing Implication
+The single-attempt sweep is reassuring at n=1 per CVE but doesn't say whether silent failures surface under sustained traffic — which is exactly when 503s would have driven the original artifact. A scale study (`scripts/cve_scale_study.py`, n=30 attempts × 12 CVEs = 360 calls) is the next step. Results land in `results/cve_scale_study.jsonl` and the new `cve_scale_study` BigQuery table. *Placeholder — fill in once the scale study completes.*
 
-A naive router that picks models by tier or price would choose Flash Lite (cheapest) — and in this case, that's the correct decision. But a router that uses model family as a proxy for capability ("Flash should be better than Flash Lite") would make a catastrophic error on security-critical pipelines. This validates the empirical approach: **benchmark results, not model names, should drive routing.**
+### Routing implication (revised)
+
+The "naive router would pick Flash by family" framing in the original Routing Implication is no longer load-bearing — Flash and Flash Lite are both 12/12 on the battery, and the routing case for Flash Lite over Flash now rests on (a) cost (Flash Lite at $0.04/MTok input vs Flash at $0.10/MTok), (b) latency (Flash Lite mean ~500ms vs Flash ~2100ms on the larger benchmark), and (c) calibration (Flash often reports `confidence=10` regardless of correctness; Flash Lite shows weak positive `cal_r`). The "benchmark results, not model names, should drive routing" punchline still holds — it just isn't anchored to a CVE-detection capability gap.

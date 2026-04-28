@@ -67,25 +67,40 @@ The CVE battery is small. 12 real, patched Python CVEs across
 requests, urllib3, Jinja2, PyJWT, PyYAML, Werkzeug, certifi, and
 Flask. Severity mix: 3 critical, 5 high, 4 medium. n=1 per CVE, not
 30. I'm deliberately not padding this number. A 12-CVE battery is
-enough to make one finding stick and not enough to make capability
-claims beyond it. Expanding the battery is on the roadmap.
+enough to falsify or confirm a single capability claim and not
+enough to make new capability claims of its own. Expanding the
+battery is on the roadmap.
 
 Step 1 of the CVE pipeline asks each model: is this code vulnerable,
 what severity, what's your confidence. Results:
 
-| Model                 | Detected | Missed high/critical | Mean confidence |
-|-----------------------|----------|----------------------|-----------------|
-| claude-haiku-4-5      | 12/12    | 0                    | 9.0             |
-| gemini-2.5-flash      | 6/12     | 2                    | N/A             |
-| gemini-2.5-flash-lite | 12/12    | 0                    | 9.3             |
-| gpt-4o-mini           | 12/12    | 0                    | 8.0             |
+| Model                 | Detected (n=1) | Mean confidence |
+|-----------------------|----------------|-----------------|
+| claude-haiku-4-5      | 12/12          | 9.0             |
+| gemini-2.5-flash      | 12/12          | 9.3             |
+| gemini-2.5-flash-lite | 12/12          | 9.3             |
+| gpt-4o-mini           | 12/12          | 8.0             |
 
-Gemini 2.5 Flash missed half of them. Its failure mode on the misses
-was unparseable output with no confidence score at all, which is why
-mean confidence is N/A. Gemini 2.5 Flash Lite, priced at 2.5x less,
-caught all 12. A router that picked models by family ("Flash beats
-Flash Lite") would make a bad decision on this task. A router with
-the dangerous-rate number in front of it would not.
+All four SLM-tier models detect all 12 CVEs correctly under normal
+conditions.
+
+**Correction.** An earlier version of this README claimed "Gemini 2.5
+Flash missed half of them ... unparseable output with no confidence
+score." That finding has been retracted. The 6 originally-recorded
+misses were 503 timeouts and rate-limit failures from the Gemini
+direct API during the v1 benchmark — infrastructure noise, not
+capability. Commit `4867197` flagged this internally at the time;
+the public README took longer to catch up. A fresh sweep of all 12
+CVEs in April 2026 returned `vulnerable: yes` with confidence 8-10
+on every CVE, including all six previously listed as "MISSED."
+
+The next question is whether silent failures surface under sustained
+load — which is exactly the regime where the original 503s came from.
+A scale study (`scripts/cve_scale_study.py`, n=30 attempts × 12 CVEs
+= 360 calls) is queued to test this directly. Results land in
+`results/cve_scale_study.jsonl` and the BigQuery `cve_scale_study`
+table; the README will be updated with the scale-study summary once
+it completes.
 
 The broader 4-model, 3-task, 30-example-per-task battery is where
 the cost story lives:
