@@ -3,6 +3,12 @@ import ELI5Panel from '../components/ELI5Panel'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
+// Mirrors router/policy.py's MIN_ACCEPTABLE_SCORE. Below this, end-to-end
+// accuracy is wrong more than 30% of the time — saving money on a
+// failing pipeline is just being wrong cheaply, and the dashboard should
+// say so out loud.
+const PIPELINE_MIN_ACCEPTABLE_ACCURACY = 0.70
+
 function formatCost(val) {
   if (val == null) return '—'
   return `$${Number(val).toFixed(4)}`
@@ -80,6 +86,13 @@ export default function PipelineCost() {
   const liteCost = strategies.find(s => s.strategy === 'all-lite')?.cost || strategies.find(s => s.strategy === 'cacr-routed')?.cost
   const costMultiple = haikuCost && liteCost ? Math.round(haikuCost / liteCost) : null
 
+  // Honesty gate: if any strategy lands below the end-to-end accuracy
+  // threshold, surface it loudly above the cost narrative. The cheapest
+  // pipeline isn't a "winner" if every option is wrong most of the time.
+  const anyBelowThreshold = strategies.some(
+    s => s.accuracy != null && s.accuracy < PIPELINE_MIN_ACCEPTABLE_ACCURACY
+  )
+
   return (
     <div>
       <div className="mb-6">
@@ -88,6 +101,18 @@ export default function PipelineCost() {
           Same accuracy, radically different cost. CACR matches Haiku's performance at {costMultiple ? `${costMultiple}x` : '~22x'} lower cost per request.
         </p>
       </div>
+
+      {/* Below-threshold banner — sits above the strategy grid so the
+          cost narrative below is read in the right context. */}
+      {anyBelowThreshold && (
+        <div className="bg-amber-950/40 border border-amber-700/50 rounded-lg px-4 py-3 text-amber-300 text-sm mb-6">
+          <div className="font-semibold mb-1">⚠ All strategies below end-to-end accuracy threshold</div>
+          <div className="text-amber-200/90">
+            All evaluated strategies score below {PIPELINE_MIN_ACCEPTABLE_ACCURACY.toFixed(2)} end-to-end accuracy
+            on this pipeline. The cheapest option is not the best option — it's the least-expensive way to be wrong.
+          </div>
+        </div>
+      )}
 
       {/* Strategy cards — cost is the hero metric */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
