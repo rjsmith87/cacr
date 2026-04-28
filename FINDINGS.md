@@ -1,8 +1,28 @@
 # CACR Findings — 2026-04-28 (v2: frontier tier added)
 
-## Headline: Flash Lite is still cost-optimal — adding the frontier tier doesn't change the routing decision
+## Headline: Both pipelines catch the bug. Only one tells you the truth about how confident it is.
 
-Adding **Claude Opus 4.7, GPT-5, o3, and Gemini 2.5 Pro** to the benchmark moves the *accuracy ceiling* up by 4–7pp on classification tasks and 10pp on summarization, but **doesn't dislodge Gemini 2.5 Flash Lite as the cost-optimal default on any of the three tasks**. The frontier tier is 5–50× more expensive per call (input + output + reasoning tokens billed together) and the absolute accuracy gains are marginal where they exist at all. The headline finding from v1 holds with the frontier tier in the mix.
+The clearest single demonstration of cascade-aware routing in this project is now the side-by-side run on CVE-2023-30861 (Flask session cookie disclosure) — three steps each, two strategies. *Both pipelines correctly identify the vulnerability.* The differences are in cost, calibration, and what each pipeline tells you about its own uncertainty.
+
+| | All Flash | CACR Routed |
+|---|---|---|
+| Models per step | Flash → Flash → Flash | Flash Lite → Flash Lite → Opus 4.7 |
+| Step 1 severity (gold: high) | high ✓ | medium ✗ (Flash Lite under-rates) |
+| Step 2 detection | session_fixation ✓ | session_fixation ✓ |
+| Step 3 fix | complete (383 chars) | truncated mid-sentence (Opus hit 256-token cap) |
+| Confidence per step | 9, 9, 9 (anchored — no signal) | 8, 7, null (variance + parse failure) |
+| Total cost | $0.000482 | $0.017751 (**37× more**) |
+| Total latency | 2.0 s | 6.3 s (**3× more**) |
+
+The cascade-aware mechanism worked exactly as designed: the router correctly identified that no SLM-tier model meets the 0.70 minimum acceptable score on generation tasks, escalated step 3 to Opus 4.7, and surfaced a `below_threshold` warning text to the operator. The escalation cost real dollars and produced a truncated output — both honest signals that this kind of generation task is at the edge of what the available models can do reliably.
+
+What All Flash hides by anchoring confidence at 9-on-every-step is whether the pipeline was actually sure about anything. CACR Routed's `[8, 7, null]` is information: step 2 was harder than step 1 from Flash Lite's point of view, and the escalated model on step 3 produced output the parser couldn't trust. Whether the cost is worth that signal is a deployment-context call — but the signal itself only exists in the routed pipeline.
+
+The full canonical run is in `dashboard/src/data/cascade_demo.json`; the side-by-side renders on the Cascade Demo tab of the dashboard, which is now the landing page.
+
+## Capability Matrix (30 examples/task, 8 models — v2 frontier rows recomputed from BQ deduped calls)
+
+The Capability Matrix and the rest of the findings below are still load-bearing for the routing decisions the matrix drives — they're just no longer the headline.
 
 ## Capability Matrix (30 examples/task, 8 models — v2 frontier rows recomputed from BQ deduped calls)
 

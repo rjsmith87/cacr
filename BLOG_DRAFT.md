@@ -1,14 +1,42 @@
-# I added the four most expensive frontier models to my router benchmark. The cheap one still won.
+# Both pipelines catch the bug. Only one tells you the truth about how confident it is.
 
-I run a small empirical project called CACR — Cascade-Aware Confidence Routing — that benchmarks LLMs on code-focused tasks and measures the *real* cost of using them inside a multi-step pipeline. The original lineup was four small/cheap models: Claude Haiku 4.5, Gemini 2.5 Flash, Gemini 2.5 Flash Lite, and GPT-4o-mini. The headline finding from that v1 run was that Gemini 2.5 Flash Lite, the cheapest model in the lineup at $0.04 per million input tokens, was the cost-optimal default on all three tasks in the battery.
+I run a small empirical project called CACR — Cascade-Aware Confidence Routing. It benchmarks LLMs on code-focused tasks and measures the *real* cost of using them inside a multi-step pipeline. The clearest single demonstration of why this matters now lives on the dashboard's first tab as a side-by-side cascade demo on a real Python CVE.
+
+CVE-2023-30861 — Flask session cookie disclosure when `Cache-Control: public` is set on a session-dependent response. Three-step pipeline, two strategies:
+
+- **All Flash:** every step uses `gemini-2.5-flash`. Cheap, fast, fixed.
+- **CACR Routed:** the router picks per step. Steps 1 and 2 are SecurityVuln-shaped, so the cost matrix says Flash Lite. Step 3 is generation-shaped (CodeSummarization), and *no model in the matrix meets the 0.70 minimum acceptable score on generation tasks* — so the router takes the all-fail path: it returns the highest-scoring fallback (Opus 4.7 at score 0.52) along with a `below_threshold: true` flag and a warning string telling the operator to consider human review.
+
+Both pipelines correctly identify the vulnerability at step 2. Both propose fixes. The numbers that diverge are the ones the cascade-aware machinery was built to surface:
+
+| | All Flash | CACR Routed |
+|---|---|---|
+| Models per step | Flash → Flash → Flash | Flash Lite → Flash Lite → Opus 4.7 |
+| Confidence per step | 9, 9, 9 | 8, 7, null |
+| Cost | $0.000482 | $0.017751 (**37×**) |
+| Latency | 2.0 s | 6.3 s |
+| Step 1 severity (gold: high) | high ✓ | medium ✗ |
+| Step 3 fix | complete | truncated at 256-token cap |
+
+All Flash anchors confidence at 9 on every step. That's a flat line — no information about which step was actually hard. CACR Routed says 8 on step 1, 7 on step 2 — variance — and `null` on step 3 because the escalated model failed to follow the response format. *Both signals are honest in different ways.* The variance tells the operator Flash Lite was less sure on the detection step than the severity step; the null tells the operator the escalation produced output the parser couldn't trust.
+
+The cost difference is real and inverted from the simple narrative. CACR Routed costs **37× more** than All Flash on this CVE. That's the cascade mechanism working exactly as designed: the router correctly identified that no SLM-tier model passes the threshold on generation, escalated to Opus, surfaced the warning to the operator. The router didn't lie about the cost; it surfaced the cost and the warning together. Whether 37× is worth a structured warning + a confidence signal that actually moves is a deployment-context call. But the choice is only legible at all because the routed pipeline shows both halves of it.
+
+What the All Flash pipeline hides — by anchoring confidence at 9 — is whether you should trust any of its steps. The cheap reliable model produces a flat line and a complete fix. It looks great on a dashboard. It doesn't tell you when to add human review.
+
+That's the cascade-aware-routing thesis in one CVE. The rest of this post is the frontier-tier benchmark that surrounds it.
+
+---
+
+## The frontier benchmark: I added the four most expensive models. The cheap one still won.
+
+The original CACR lineup was four small/cheap models: Claude Haiku 4.5, Gemini 2.5 Flash, Gemini 2.5 Flash Lite, and GPT-4o-mini. The headline finding from v1 was that Flash Lite, the cheapest at $0.04 per million input tokens, was the cost-optimal default on all three tasks.
 
 A friend pushed back: *"Sure, the cheap model wins among cheap models. Add the frontier tier and the picture flips."*
 
 So I added Claude Opus 4.7, GPT-5, o3, and Gemini 2.5 Pro — the four most capable, most expensive models on the market — and re-ran the whole benchmark. 720 API calls, ~$4.24 in spend, one infrastructure hang that ate eleven hours of wall time, and one statistical artifact dressed up as a feature.
 
-The picture didn't flip. Flash Lite still wins.
-
-This post explains why, what surprised me, and what changed in the router as a result.
+The picture didn't flip. Flash Lite still wins on cost-adjusted accuracy.
 
 ## Why CACR exists
 
