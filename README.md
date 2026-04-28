@@ -5,7 +5,7 @@ benchmarks of accuracy, cost, and dangerous rate.
 
 ## Live
 
-- Dashboard: https://cacr-dashboard.onrender.com
+- Dashboard: https://cacr-dashboard.onrender.com — all 8 benchmarked models (4 SLM-tier + 4 frontier) are reflected on the Capability Matrix, Calibration Explorer, Cascade Cost Model, and Model Efficiency tabs.
 - API health: https://cacr-api.onrender.com/health
 
 ## The problem
@@ -197,6 +197,10 @@ Tests:
 pytest tests/test_python.py              # 14 tests, import + unit
 cd dashboard && npx playwright test      # E2E against a running dashboard
 ```
+
+## Deploying
+
+`git push origin main` triggers Render's git auto-deploy. When the auto-deploy doesn't fire (intermittent on this project), trigger a deploy manually with `python scripts/render_deploy.py srv-d7cf11rbc2fs73eta09g srv-d7cf147lk1mc7397nd70` (CACR API and dashboard service IDs respectively); the script reads `RENDER_API_KEY` from `.env` and polls until both deploys reach a terminal status.
 
 ## Why this exists
 
