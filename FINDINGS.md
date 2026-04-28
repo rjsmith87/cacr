@@ -109,6 +109,23 @@ Expected cost per (task, model) pair including cascade failure retry:
 
 gemini-2.5-pro was removed in v1 after consistently returning 503 (UNAVAILABLE) on Vertex AI. v2 re-added Pro via the direct API path (`GOOGLE_API_KEY`, `google-genai`) — same path as Flash and Flash Lite. Pro now passes all three task thresholds (0.90/0.97/0.47) but at 8.7–16.7s/call latency, with one indefinite hang requiring a per-request timeout fix (see "Failures and rate limits" above) and 8 503s during a 53-minute re-run window. Pro is **operational** on the direct API but its tail-latency and availability are markedly worse than the SLM tier. Inclusion is justified for the capability-matrix completeness; routing should still default to SLM-tier models with Pro as an explicit-opt-in escalation target only when accuracy gains justify the latency penalty.
 
+## Router minimum performance floor (added 2026-04-28)
+
+Earlier router behavior recommended whichever model passed each task's *own* threshold (CodeReview/SecurityVuln=0.6, CodeSummarization=0.4) — which let Flash Lite at score=0.42 on CodeSummarization be silently surfaced to users as if it were a defensible default. 0.42 means the model is wrong more than half the time. Recommending it without a warning was lying.
+
+The router now enforces a hard global floor `MIN_ACCEPTABLE_SCORE = 0.70` on top of the per-task threshold. Why 0.70: below it, the model is wrong more than 30% of the time, which is not acceptable for production deployment of a tool that humans will rely on without manually checking each output. The threshold is deliberately stricter than every per-task threshold in the original benchmark.
+
+Behavior change vs v1:
+- **At least one model meets 0.70** → cheapest such model is recommended (same as before, just with a stricter filter). Existing escalation logic preserved: if the cheapest acceptable pick is borderline (<0.80) and a higher-cost model offers a +0.05 accuracy bump, the router escalates.
+- **No model meets 0.70** → router still returns the *best-available* model so callers can proceed, but the response now carries `below_threshold: true` and a `warning` field with text like *"All evaluated models score below 0.70 on {task}. Best available is {model} at score {score}. Consider human review or task reformulation."* The dashboard shows this as a visible amber banner, and the explain endpoint switches to honest framing — no more "good value" or "rock-bottom pricing" descriptions for a 0.42 score.
+
+Concrete impact on the v2 capability matrix:
+- **CodeReview**: at least 6 models meet 0.70 → router recommends Flash Lite (0.90), no warning.
+- **SecurityVuln**: at least 6 models meet 0.70 → router recommends Flash Lite (0.93), no warning.
+- **CodeSummarization**: NO model meets 0.70. Best available is Opus 4.7 at 0.52 (frontier tier) or Flash Lite at 0.42 if cost-weighted. The router returns one of these with `below_threshold: true`. CodeSummarization is now flagged as a task no available model handles to a production-acceptable standard.
+
+This is honest about the underlying capability matrix — the v1 router's 0.42 recommendation was technically the cost-optimal pick *given that you have to pick something*, but it never made clear that picking anything at all was the wrong move. The new behavior keeps the same selection logic for the recommendation while making the reliability signal first-class.
+
 ## Key Takeaway for Routing (updated for v2)
 
 For a 3-step agentic pipeline, the cascade-aware router defaults to Flash Lite for all steps. v2's addition of the frontier tier confirms this: even with Opus 4.7, GPT-5, o3, and Pro on the table, Flash Lite remains cost-optimal on every task that meets its threshold. Frontier models become economic only when (a) the failure mode is user-visible (CodeSummarization → Opus, +10pp at 5× cost) or (b) the task is one Flash Lite can't pass at all (none in the current battery — every task has Flash Lite ≥ threshold).
