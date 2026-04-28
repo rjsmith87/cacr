@@ -1,0 +1,207 @@
+{
+  "generated_at_utc": "2026-04-28T22:45:10.225761+00:00",
+  "finished_at_utc": "2026-04-28T22:45:18.795965+00:00",
+  "cve": {
+    "id": "CVE-2023-30861",
+    "severity_gold": "high",
+    "is_vulnerable_gold": true,
+    "code": "from flask import Flask, session, jsonify, request\n\napp = Flask(__name__)\napp.secret_key = \"dev-secret-key\"\n\n@app.route(\"/profile\")\ndef profile():\n    session[\"visited\"] = True\n    resp = jsonify({\"user\": session.get(\"user_id\"), \"role\": session.get(\"role\")})\n    resp.headers[\"Cache-Control\"] = \"public, max-age=300\"\n    return resp\n\n@app.route(\"/login\", methods=[\"POST\"])\ndef login():\n    session[\"user_id\"] = request.form[\"user\"]\n    session[\"role\"] = \"admin\" if request.form[\"user\"] == \"admin\" else \"viewer\"\n    return \"OK\"\n",
+    "attack_vector": "A shared HTTP cache (CDN/proxy) serves a cached response that includes Set-Cookie with one user's session to a different user. The /profile endpoint sets Cache-Control: public on a response that depends on session state, causing session data leakage across users.",
+    "expected_fix": "Remove 'Cache-Control: public' from responses that use session data, or upgrade Flask to >= 2.3.2 which adds Vary: Cookie automatically and prevents caching of session-dependent responses."
+  },
+  "all_flash": {
+    "strategy": "All Flash",
+    "models_used": [
+      "gemini-2.5-flash"
+    ],
+    "steps": [
+      {
+        "step": 1,
+        "name": "Severity classification",
+        "model": "gemini-2.5-flash",
+        "prompt_summary": "Rate severity of any vulnerability in this code (critical/high/medium/low/none)",
+        "prompt_length_chars": 779,
+        "output": "severity: high\nconfidence: 9",
+        "output_truncated": "severity: high\nconfidence: 9",
+        "parsed": {
+          "severity": "high",
+          "confidence": 9
+        },
+        "confidence": 9,
+        "latency_ms": 645.2,
+        "cost_usd": 7.57e-05,
+        "error": null,
+        "routing": {
+          "task": null,
+          "rationale": "fixed strategy: every step uses gemini-2.5-flash",
+          "below_threshold": false,
+          "warning": null
+        }
+      },
+      {
+        "step": 2,
+        "name": "Vulnerability detection",
+        "model": "gemini-2.5-flash",
+        "prompt_summary": "Identify vulnerability type given severity=high",
+        "prompt_length_chars": 878,
+        "output": "vulnerable: yes\nvulnerability_type: session_fixation\nconfidence: 9",
+        "output_truncated": "vulnerable: yes\nvulnerability_type: session_fixation\nconfidence: 9",
+        "parsed": {
+          "is_vulnerable": true,
+          "vulnerability_type": "session_fixation",
+          "confidence": 9
+        },
+        "confidence": 9,
+        "latency_ms": 537.7,
+        "cost_usd": 0.0001057,
+        "error": null,
+        "routing": {
+          "task": null,
+          "rationale": "fixed strategy: every step uses gemini-2.5-flash",
+          "below_threshold": false,
+          "warning": null
+        }
+      },
+      {
+        "step": 3,
+        "name": "Fix proposal",
+        "model": "gemini-2.5-flash",
+        "prompt_summary": "Propose remediation for session_fixation (high severity)",
+        "prompt_length_chars": 839,
+        "output": "fix: To prevent session fixation, regenerate the session ID upon successful login. This can be achieved by calling `session.regenerate()` or `session.clear()` followed by setting new session variables after authentication in the `/login` endpoint. This ensures that a new session ID is issued, invalidating any pre-existing session ID that an attacker might have fixed.\nconfidence: 9",
+        "output_truncated": "fix: To prevent session fixation, regenerate the session ID upon successful login. This can be achieved by calling `session.regenerate()` or `session.clear()` followed by setting new session variables after authentication in the `/login` endpoint. This ensures that a new session ID is issued, invalidating any pre-existing session ID that an attacker might have fixed.\nconfidence: 9",
+        "parsed": {
+          "fix": "To prevent session fixation, regenerate the session ID upon successful login. This can be achieved by calling `session.regenerate()` or `session.clear()` followed by setting new session variables after authentication in the `/login` endpoint. This ensures that a new session ID is issued, invalidating any pre-existing session ID that an attacker might have fixed.",
+          "confidence": 9
+        },
+        "confidence": 9,
+        "latency_ms": 863.8,
+        "cost_usd": 0.0003002,
+        "error": null,
+        "routing": {
+          "task": null,
+          "rationale": "fixed strategy: every step uses gemini-2.5-flash",
+          "below_threshold": false,
+          "warning": null
+        }
+      }
+    ],
+    "total_cost_usd": 0.0004816,
+    "total_latency_ms": 2046.7,
+    "outcome": {
+      "vulnerability_detected": true,
+      "fix_proposed": true
+    },
+    "confidence_stats": {
+      "min": 9,
+      "max": 9,
+      "spread": 0,
+      "values": [
+        9,
+        9,
+        9
+      ]
+    }
+  },
+  "cacr_routed": {
+    "strategy": "CACR Routed",
+    "models_used": [
+      "gemini-2.5-flash-lite",
+      "claude-opus-4-7"
+    ],
+    "steps": [
+      {
+        "step": 1,
+        "name": "Severity classification",
+        "model": "gemini-2.5-flash-lite",
+        "prompt_summary": "Rate severity of any vulnerability in this code (critical/high/medium/low/none)",
+        "prompt_length_chars": 779,
+        "output": "severity: medium\nconfidence: 8",
+        "output_truncated": "severity: medium\nconfidence: 8",
+        "parsed": {
+          "severity": "medium",
+          "confidence": 8
+        },
+        "confidence": 8,
+        "latency_ms": 361.7,
+        "cost_usd": 2.22e-05,
+        "error": null,
+        "routing": {
+          "task": "SecurityVuln",
+          "rationale": "Cheapest model meeting MIN_ACCEPTABLE_SCORE (0.7) for SecurityVuln: gemini-2.5-flash-lite (score=0.93, cost=$0.00009990)",
+          "below_threshold": false,
+          "warning": null
+        }
+      },
+      {
+        "step": 2,
+        "name": "Vulnerability detection",
+        "model": "gemini-2.5-flash-lite",
+        "prompt_summary": "Identify vulnerability type given severity=medium",
+        "prompt_length_chars": 880,
+        "output": "vulnerable: yes\nvulnerability_type: session_fixation\nconfidence: 7",
+        "output_truncated": "vulnerable: yes\nvulnerability_type: session_fixation\nconfidence: 7",
+        "parsed": {
+          "is_vulnerable": true,
+          "vulnerability_type": "session_fixation",
+          "confidence": 7
+        },
+        "confidence": 7,
+        "latency_ms": 468.2,
+        "cost_usd": 2.84e-05,
+        "error": null,
+        "routing": {
+          "task": "SecurityVuln",
+          "rationale": "Cheapest model meeting MIN_ACCEPTABLE_SCORE (0.7) for SecurityVuln: gemini-2.5-flash-lite (score=0.93, cost=$0.00009990)",
+          "below_threshold": false,
+          "warning": null
+        }
+      },
+      {
+        "step": 3,
+        "name": "Fix proposal",
+        "model": "claude-opus-4-7",
+        "prompt_summary": "Propose remediation for session_fixation (medium severity)",
+        "prompt_length_chars": 841,
+        "output": "fix: In the `/login` route, regenerate the session before assigning authenticated identity to prevent session fixation. Specifically, call `session.clear()` at the start of `login()` to invalidate any pre-existing session, then set `user_id` and `role`; additionally mark `session.permanent = True` (optional) and ensure the session cookie is rotated by Flask's signed-cookie mechanism. For server-side session backends (e.g., Flask-Session), explicitly destroy and recreate the session ID (e.g., `session.regenerate()` or delete the old session record and issue a new identifier) so the post-authentication session ID differs from the pre-authentication one. Also remove sensitive data caching by changing `Cache-Control` on `/profile` to `private, no-store` so authenticated",
+        "output_truncated": "fix: In the `/login` route, regenerate the session before assigning authenticated identity to prevent session fixation. Specifically, call `session.clear()` at the start of `login()` to invalidate any pre-existing session, then set `user_id` and `role`; additionally mark `session.permanent = True` (optional) and ensure the session cookie is rotated by Flask's signed-cookie mechanism. For server-si\u2026",
+        "parsed": {
+          "fix": "In the `/login` route, regenerate the session before assigning authenticated identity to prevent session fixation. Specifically, call `session.clear()` at the start of `login()` to invalidate any pre-existing session, then set `user_id` and `role`; additionally mark `session.permanent = True` (optional) and ensure the session cookie is rotated by Flask's signed-cookie mechanism. For server-side session backends (e.g., Flask-Session), explicitly destroy and recreate the session ID (e.g., `session.regenerate()` or delete the old session record and issue a new identifier) so the post-authentication session ID differs from the pre-authentication one. Also remove sensitive data caching by changing `Cache-Control` on `/profile` to `private, no-store` so authenticated",
+          "confidence": null
+        },
+        "confidence": null,
+        "latency_ms": 5485.0,
+        "cost_usd": 0.0177,
+        "error": null,
+        "routing": {
+          "task": "CodeSummarization",
+          "rationale": "No model meets MIN_ACCEPTABLE_SCORE (0.7) for CodeSummarization. Returning best available: claude-opus-4-7 at score=0.52, cost=$0.00325038.",
+          "below_threshold": true,
+          "warning": "All evaluated models score below 0.7 on CodeSummarization. Best available is claude-opus-4-7 at score 0.52. Consider human review or task reformulation."
+        }
+      }
+    ],
+    "total_cost_usd": 0.0177506,
+    "total_latency_ms": 6314.9,
+    "outcome": {
+      "vulnerability_detected": true,
+      "fix_proposed": true
+    },
+    "confidence_stats": {
+      "min": 7,
+      "max": 8,
+      "spread": 1,
+      "values": [
+        8,
+        7
+      ]
+    }
+  },
+  "comparison": {
+    "cost_ratio_flash_over_cacr": 0.03,
+    "latency_ratio_flash_over_cacr": 0.32,
+    "both_detected": true,
+    "all_flash_confidence_spread": 0,
+    "cacr_confidence_spread": 1
+  }
+}
