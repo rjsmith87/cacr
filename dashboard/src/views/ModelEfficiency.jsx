@@ -4,27 +4,12 @@ import {
   Tooltip, ResponsiveContainer, Legend, Cell,
 } from 'recharts'
 import ELI5Panel from '../components/ELI5Panel'
+import { modelColor, shortLabel } from '../lib/modelLabels'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-const MODEL_COLORS = {
-  'gemini-2.5-flash-lite': '#34d399',
-  'flash-lite': '#34d399',
-  'claude-haiku-4-5': '#fbbf24',
-  'haiku': '#fbbf24',
-  'gemini-2.5-flash': '#60a5fa',
-  'flash': '#60a5fa',
-  'gpt-4o-mini': '#f472b6',
-}
-
-const FALLBACK_COLORS = ['#818cf8', '#34d399', '#fbbf24', '#f472b6', '#60a5fa', '#a78bfa', '#fb923c', '#2dd4bf']
-
 function getModelColor(model, index) {
-  const lower = model.toLowerCase()
-  for (const [key, color] of Object.entries(MODEL_COLORS)) {
-    if (lower.includes(key)) return color
-  }
-  return FALLBACK_COLORS[index % FALLBACK_COLORS.length]
+  return modelColor(model, index)
 }
 
 function CustomTooltip({ active, payload, label }) {
@@ -121,7 +106,7 @@ export default function ModelEfficiency() {
           <div key={m.model} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: m.color }} />
-              <span className="text-sm font-medium text-gray-200 truncate" title={m.model}>{m.model}</span>
+              <span className="text-sm font-medium text-gray-200 truncate" title={m.model}>{shortLabel(m.model)}</span>
             </div>
             <p className="text-2xl font-bold font-mono" style={{ color: m.color }}>
               {m.avgEfficiency.toFixed(1)}
@@ -137,7 +122,10 @@ export default function ModelEfficiency() {
 
       {/* Bar chart */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-        <ResponsiveContainer width="100%" height={Math.max(400, tasks.length * 50)}>
+        <ResponsiveContainer
+          width="100%"
+          height={Math.max(500, tasks.length * (models.length * 18 + 60))}
+        >
           <BarChart
             data={chartData}
             layout="vertical"
@@ -161,11 +149,11 @@ export default function ModelEfficiency() {
               <Bar
                 key={model}
                 dataKey={model}
-                name={model}
+                name={shortLabel(model)}
                 fill={getModelColor(model, i)}
                 fillOpacity={0.85}
                 radius={[0, 4, 4, 0]}
-                barSize={16}
+                barSize={14}
               />
             ))}
           </BarChart>

@@ -4,13 +4,9 @@ import {
   Tooltip, ResponsiveContainer, Legend, ZAxis,
 } from 'recharts'
 import ELI5Panel from '../components/ELI5Panel'
+import { modelColor, modelShape, shortLabel } from '../lib/modelLabels'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-
-const MODEL_COLORS = [
-  '#818cf8', '#34d399', '#f472b6', '#fbbf24',
-  '#60a5fa', '#a78bfa', '#fb923c', '#2dd4bf',
-]
 
 function CustomTooltip({ active, payload }) {
   if (!active || !payload || payload.length === 0) return null
@@ -126,8 +122,9 @@ export default function CalibrationExplorer() {
 
             {modelNames.map((model, i) => (
               <Scatter
-                key={model} name={model} data={byModel[model]}
-                fill={MODEL_COLORS[i % MODEL_COLORS.length]} fillOpacity={0.7}
+                key={model} name={shortLabel(model)} data={byModel[model]}
+                fill={modelColor(model, i)} fillOpacity={0.7}
+                shape={modelShape(model)}
               />
             ))}
           </ScatterChart>

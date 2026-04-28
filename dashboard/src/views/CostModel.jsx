@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import ELI5Panel from '../components/ELI5Panel'
+import { shortLabel } from '../lib/modelLabels'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -62,7 +63,7 @@ export default function CostModel() {
               <th className="text-left px-3 py-2 text-gray-400 font-medium">Task</th>
               {models.map(m => (
                 <th key={m} className="text-center px-3 py-2 text-gray-400 font-medium">
-                  <span className="block truncate max-w-[130px]" title={m}>{m}</span>
+                  <span className="block truncate max-w-[100px]" title={m}>{shortLabel(m)}</span>
                 </th>
               ))}
             </tr>

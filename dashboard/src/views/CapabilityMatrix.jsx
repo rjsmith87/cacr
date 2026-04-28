@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import ELI5Panel from '../components/ELI5Panel'
+import { shortLabel } from '../lib/modelLabels'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -103,8 +104,8 @@ export default function CapabilityMatrix() {
             <tr>
               <th className="text-left text-sm font-medium text-gray-400 p-2 min-w-[140px]">Task</th>
               {models.map(model => (
-                <th key={model} className="text-center text-sm font-medium text-gray-400 p-2 min-w-[100px]">
-                  <span className="block truncate max-w-[120px]" title={model}>{model}</span>
+                <th key={model} className="text-center text-sm font-medium text-gray-400 p-2 min-w-[80px]">
+                  <span className="block truncate max-w-[100px]" title={model}>{shortLabel(model)}</span>
                 </th>
               ))}
             </tr>
