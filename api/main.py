@@ -18,6 +18,7 @@ import csv
 import json
 import os
 import sys
+import time
 
 from flask import Flask, jsonify, request, abort
 from flask_caching import Cache
@@ -371,6 +372,101 @@ _BANNED_PHRASES_WHEN_BELOW_THRESHOLD = (
     'pricing", "reliable choice", "clear winner", "winner", "matches '
     'performance", "comparable accuracy", "same result"'
 )
+
+
+# ── POST /api/cascade-compare ──────────────────────────────────────
+#
+# Side-by-side run of the 3-step (severity → detection → fix) pipeline
+# under two strategies: "cacr" (cascade-aware router with runtime
+# confidence escalation) or any concrete model name in MODEL_COSTS.
+# Validates inputs aggressively because this endpoint hits paid
+# upstream APIs and accepts free-form code from the request body.
+#
+# Rate limit: 30-second cooldown per source IP, kept in a process-local
+# dict. The Flask app runs with --workers 2 on Render, so a determined
+# client could squeeze through at most 2 calls inside the cooldown by
+# bouncing between workers — acceptable for an interactive demo tool;
+# upgrade to Redis if the endpoint goes truly public.
+
+_CASCADE_RATE_LIMIT_LAST: dict[str, float] = {}
+_CASCADE_COOLDOWN_S = 30
+_VALID_TASKS = {"CodeReview", "SecurityVuln", "CodeSummarization"}
+_MAX_CODE_CHARS = 5000
+
+
+def _client_ip() -> str:
+    """Return the originating client IP, peeling Cloudflare / Render
+    forwarded-for headers to find the actual client. Falls back to
+    remote_addr if the headers are absent."""
+    fwd = (request.headers.get("X-Forwarded-For") or "").strip()
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
+@app.route("/api/cascade-compare", methods=["POST"])
+def cascade_compare():
+    ip = _client_ip()
+    now = time.time()
+    last = _CASCADE_RATE_LIMIT_LAST.get(ip, 0.0)
+    elapsed = now - last
+    if elapsed < _CASCADE_COOLDOWN_S:
+        retry_in = round(_CASCADE_COOLDOWN_S - elapsed)
+        resp = jsonify({
+            "error": f"rate limited: {retry_in}s cooldown remaining",
+            "retry_in_seconds": retry_in,
+        })
+        resp.headers["Retry-After"] = str(retry_in)
+        return resp, 429
+
+    data = request.get_json(force=True, silent=True) or {}
+
+    # ── Validate inputs ────────────────────────────────────────────
+    code = data.get("code_snippet")
+    if not isinstance(code, str) or not code.strip():
+        abort(400, "code_snippet (non-empty string) is required")
+    if len(code) > _MAX_CODE_CHARS:
+        abort(400, f"code_snippet exceeds {_MAX_CODE_CHARS} character limit")
+
+    task = data.get("task")
+    if task not in _VALID_TASKS:
+        abort(400, f"task must be one of: {sorted(_VALID_TASKS)}")
+
+    from router.cost_model import MODEL_COSTS
+    valid_model_names = set(MODEL_COSTS.keys())
+    for key in ("strategy_a", "strategy_b"):
+        s = data.get(key)
+        if s != "cacr" and s not in valid_model_names:
+            abort(
+                400,
+                f"{key} must be 'cacr' or one of: {sorted(valid_model_names)}",
+            )
+
+    threshold = data.get("escalation_threshold", 7)
+    try:
+        threshold = float(threshold)
+    except (TypeError, ValueError):
+        abort(400, "escalation_threshold must be a number")
+    if not 1 <= threshold <= 10:
+        abort(400, "escalation_threshold must be between 1 and 10")
+
+    # ── Stamp the cooldown BEFORE running so a slow / failing
+    # request still counts against the client's quota. Prevents
+    # spam-retrying a 500. ──────────────────────────────────────────
+    _CASCADE_RATE_LIMIT_LAST[ip] = now
+
+    try:
+        from pipelines.cascade_pipeline import run_pipeline
+        result = run_pipeline(
+            code_snippet=code,
+            task=task,
+            strategy_a=data["strategy_a"],
+            strategy_b=data["strategy_b"],
+            escalation_threshold=threshold,
+        )
+        return jsonify(result)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
 
 
 @app.route("/api/explain", methods=["POST"])
