@@ -279,19 +279,68 @@ def _insert(client: bigquery.Client, table: bigquery.Table, rows: list[dict],
     return len(rows)
 
 
+def _existing_call_keys(
+    client: bigquery.Client, project: str, dataset: str, run_ts: str
+) -> set[tuple[str, str, int]]:
+    """Existing (task, model, example_idx) tuples for a given run_ts."""
+    query = f"""
+    SELECT task, model, example_idx
+    FROM `{project}.{dataset}.{TABLE_CALLS}`
+    WHERE run_ts = @run_ts AND event = 'call'
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("run_ts", "TIMESTAMP", run_ts),
+        ]
+    )
+    return {
+        (r["task"], r["model"], r["example_idx"])
+        for r in client.query(query, job_config=job_config).result()
+    }
+
+
+def _existing_summary_keys(
+    client: bigquery.Client, project: str, dataset: str, run_ts: str
+) -> set[tuple[str, str]]:
+    """Existing (task, model) tuples for a given run_ts."""
+    query = f"""
+    SELECT task, model
+    FROM `{project}.{dataset}.{TABLE_SUMMARIES}`
+    WHERE run_ts = @run_ts AND event = 'summary'
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("run_ts", "TIMESTAMP", run_ts),
+        ]
+    )
+    return {
+        (r["task"], r["model"])
+        for r in client.query(query, job_config=job_config).result()
+    }
+
+
 # ── Public write API ──────────────────────────────────────────────────
 def write_rows(
     rows: list[dict[str, Any]],
     project: str,
     dataset: str = DATASET,
+    run_ts: str | None = None,
 ) -> int:
-    """Write call + summary rows (legacy Phase-1 path). Backward compatible.
+    """Write call + summary rows. Idempotent within a fixed `run_ts`.
+
+    When `run_ts` is supplied, the writer first queries the destination
+    tables for existing (task, model, example_idx) and (task, model)
+    tuples under that timestamp, and skips rows that are already
+    present. This makes replay and partial-rerun safe — the same log
+    can be replayed multiple times, and a partial re-run will append
+    only the missing examples.
 
     Phase-2 columns on benchmark_calls are optional; pass them if available.
     """
     client = _build_bq_client(project)
     tables = _ensure_all_tables(client, project, dataset)
-    run_ts = datetime.now(timezone.utc).isoformat()
+    if run_ts is None:
+        run_ts = datetime.now(timezone.utc).isoformat()
 
     call_rows = []
     summary_rows = []
@@ -306,6 +355,21 @@ def write_rows(
             if cal_diff is not None and not isinstance(cal_diff, str):
                 r["calibration_by_difficulty"] = json.dumps(cal_diff)
             summary_rows.append(_project_row(r, SUMMARIES_SCHEMA))
+
+    # Dedup against rows already in the destination tables for this run_ts.
+    # Skip the dedup query when there's nothing to filter (cheaper).
+    if call_rows:
+        existing = _existing_call_keys(client, project, dataset, run_ts)
+        call_rows = [
+            r for r in call_rows
+            if (r["task"], r["model"], r["example_idx"]) not in existing
+        ]
+    if summary_rows:
+        existing = _existing_summary_keys(client, project, dataset, run_ts)
+        summary_rows = [
+            r for r in summary_rows
+            if (r["task"], r["model"]) not in existing
+        ]
 
     written = 0
     written += _insert(client, tables[TABLE_CALLS], call_rows, "calls")
