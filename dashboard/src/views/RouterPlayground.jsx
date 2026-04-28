@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import ELI5Panel from '../components/ELI5Panel'
+import { scanDangerousPatterns } from '../lib/dangerousPatterns'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -14,19 +15,36 @@ export default function RouterPlayground() {
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  // mismatchWarning: { patterns: string[], originalTask: string } | null
+  // Set when the pasted code contains dangerous patterns and the user
+  // routed it under a non-SecurityVuln task. Banner is informational
+  // only — submission is never blocked.
+  const [mismatchWarning, setMismatchWarning] = useState(null)
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
+  // Extracted so the "Switch to Security Vuln" button can call it with
+  // an explicit task override without going through React's async state
+  // update (which would race the re-fetch).
+  const route = async (task) => {
     setLoading(true)
     setError(null)
     setResult(null)
+
+    // Client-side dangerous-pattern scan — do this BEFORE the network
+    // call so the banner is in place by the time the result lands.
+    const matched = scanDangerousPatterns(form.code_snippet)
+    if (matched.length > 0 && task !== 'SecurityVuln') {
+      setMismatchWarning({ patterns: matched, originalTask: task })
+    } else {
+      setMismatchWarning(null)
+    }
+
     try {
       const res = await fetch(`${API}/api/route`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: form.code_snippet,
-          task: form.task,
+          task,
           complexity: form.complexity,
           pipeline_position: form.pipeline_position,
         }),
@@ -41,7 +59,23 @@ export default function RouterPlayground() {
     }
   }
 
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    route(form.task)
+  }
+
+  const switchToSecurityVuln = () => {
+    setForm(prev => ({ ...prev, task: 'SecurityVuln' }))
+    route('SecurityVuln')
+  }
+
   const updateField = (field, value) => setForm(prev => ({ ...prev, [field]: value }))
+
+  const TASK_LABELS = {
+    CodeReview: 'Code Review',
+    SecurityVuln: 'Security Vuln',
+    CodeSummarization: 'Code Summarization',
+  }
 
   return (
     <div>
@@ -115,8 +149,27 @@ export default function RouterPlayground() {
         </form>
 
         {/* Results */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-          {!result && !error && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-4">
+          {/* Content-mismatch warning — sits above all result rendering */}
+          {mismatchWarning && (
+            <div className="bg-yellow-950/40 border border-yellow-600/50 rounded-lg px-4 py-3 text-yellow-200 text-sm">
+              <div className="font-semibold mb-1">⚠ Heads up: this code contains patterns commonly associated with security vulnerabilities</div>
+              <div className="text-yellow-200/90 mb-3">
+                Detected: <span className="font-mono">{mismatchWarning.patterns.join(', ')}</span>.
+                You selected <span className="font-semibold">{TASK_LABELS[mismatchWarning.originalTask] || mismatchWarning.originalTask}</span> —
+                did you mean Security Vuln?
+              </div>
+              <button
+                type="button"
+                onClick={switchToSecurityVuln}
+                className="bg-yellow-600 hover:bg-yellow-500 text-yellow-950 font-semibold text-xs px-3 py-1.5 rounded transition-colors"
+              >
+                Switch to Security Vuln
+              </button>
+            </div>
+          )}
+
+          {!result && !error && !mismatchWarning && (
             <div className="flex items-center justify-center h-full text-gray-600 text-sm">
               Submit a task to see routing results
             </div>
@@ -130,6 +183,14 @@ export default function RouterPlayground() {
 
           {result && (
             <div className="space-y-5">
+              {/* Below-threshold warning — first thing inside the result block */}
+              {result.below_threshold && result.warning && (
+                <div className="bg-amber-950/40 border border-amber-700/50 rounded-lg px-4 py-3 text-amber-300 text-sm">
+                  <div className="font-semibold mb-1">⚠ All models below threshold</div>
+                  <div className="text-amber-200/90">{result.warning}</div>
+                </div>
+              )}
+
               {/* Inferred complexity badge */}
               {result.inferred_complexity && (
                 <div className="flex items-center gap-2">
@@ -200,14 +261,6 @@ export default function RouterPlayground() {
                   )}
                 </div>
               )}
-              {/* Below-threshold warning banner */}
-              {result.below_threshold && result.warning && (
-                <div className="bg-amber-950/40 border border-amber-700/50 rounded-lg px-4 py-3 text-amber-300 text-sm">
-                  <div className="font-semibold mb-1">⚠ All models below threshold</div>
-                  <div className="text-amber-200/90">{result.warning}</div>
-                </div>
-              )}
-
               <ELI5Panel
                 dataSummary={`Task: ${form.task}, Recommended model: ${result.recommended_model}, Expected cost: $${result.expected_cost?.toFixed(6)}, Complexity: ${result.inferred_complexity || result.complexity || 'unknown'}, Reasoning: ${result.reasoning}`}
                 promptHint="You are explaining an AI routing decision to a non-technical person. In plain English, explain why this model was picked for this task, what it costs, and whether this is a sensible recommendation. Don't use technical jargon — explain it like you're talking to a product manager."
