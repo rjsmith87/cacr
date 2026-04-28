@@ -257,6 +257,9 @@ def route_prompt():
     }
     if inferred:
         resp["inferred_complexity"] = inferred
+    if decision.below_threshold:
+        resp["below_threshold"] = True
+        resp["warning"] = decision.warning
     return jsonify(resp)
 
 
