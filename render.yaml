@@ -2,7 +2,7 @@ services:
   - type: web
     name: cacr-api
     runtime: python
-    plan: free
+    plan: starter
     buildCommand: pip install -r requirements-api.txt
     startCommand: gunicorn api.main:app --bind 0.0.0.0:$PORT --workers 2
     envVars:
