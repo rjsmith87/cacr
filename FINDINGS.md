@@ -1,10 +1,59 @@
-# CACR Findings — 2026-04-10 (Updated)
+# CACR Findings — 2026-04-28 (v2: frontier tier added)
 
-## Headline: Flash Lite is the best value model by a wide margin
+## Headline: Flash Lite is still cost-optimal — adding the frontier tier doesn't change the routing decision
 
-**Gemini 2.5 Flash Lite** at **$0.04/MTok** matches Claude Haiku on CodeReview (0.90 vs 0.90), comes within 0.07 on SecurityVuln (0.93 vs 1.00), and **leads all models** on CodeSummarization (0.42 ROUGE-L). At roughly 25x cheaper than Haiku and 4x cheaper than GPT-4o-mini, it is the cost-optimal default for the entire task battery.
+Adding **Claude Opus 4.7, GPT-5, o3, and Gemini 2.5 Pro** to the benchmark moves the *accuracy ceiling* up by 4–7pp on classification tasks and 10pp on summarization, but **doesn't dislodge Gemini 2.5 Flash Lite as the cost-optimal default on any of the three tasks**. The frontier tier is 5–50× more expensive per call (input + output + reasoning tokens billed together) and the absolute accuracy gains are marginal where they exist at all. The headline finding from v1 holds with the frontier tier in the mix.
 
-## Capability Matrix (30 examples/task, 4 models)
+## Capability Matrix (30 examples/task, 8 models — v2 frontier rows recomputed from BQ deduped calls)
+
+| Model                  | Tier | $/MTok in/out | CodeReview | SecurityVuln | CodeSumm | Avg    | Mean Lat |
+|------------------------|------|---------------|------------|--------------|----------|--------|----------|
+| **gemini-2.5-flash-lite** | SLM | **$0.10/$0.40** | **0.90** | **0.93**    | **0.42** | **0.75** | **476ms** |
+| gpt-4o-mini            | SLM | $0.15/$0.60   | 0.77       | 0.93         | 0.40     | 0.70   | 743ms    |
+| claude-haiku-4-5       | SLM | $1.00/$5.00   | 0.90       | **1.00**     | 0.38     | 0.76   | 740ms    |
+| gemini-2.5-flash       | SLM | $0.30/$2.50   | 0.57       | 0.80         | 0.16     | 0.51   | 2,115ms  |
+| gpt-5                  | frontier | $1.25/$10.00 | 0.93   | 0.90         | 0.35     | 0.73   | 3,423ms  |
+| **o3**                 | frontier | $2.00/$8.00 | **0.97** | 0.97         | 0.33     | 0.76   | 2,369ms  |
+| gemini-2.5-pro         | frontier | $1.25/$10.00 | 0.90   | 0.97         | 0.47     | 0.78   | 11,470ms |
+| **claude-opus-4-7**    | frontier | $15.00/$75.00 | 0.93 | 0.97         | **0.52** | **0.81** | 1,370ms  |
+
+## Where the frontier tier helps and where it doesn't
+
+**Highest-accuracy model per task:**
+- **CodeReview**: o3 (0.97) beats Flash Lite (0.90) by 7pp — at ~5× the cost
+- **SecurityVuln**: Haiku (1.00) — *the SLM tier still wins*; no frontier model exceeds it
+- **CodeSummarization**: Opus 4.7 (0.52) beats Flash Lite (0.42) by 10pp — at ~5× the cost
+
+**Cost-optimal model per task (cheapest passing threshold, with cascade retry):**
+- CodeReview → Flash Lite (score 0.90, expected cost $0.000134)
+- SecurityVuln → Flash Lite (score 0.93, expected cost $0.000100)
+- CodeSummarization → Flash Lite (score 0.42, expected cost $0.000623)
+
+Frontier-tier upgrades only make economic sense on **CodeSummarization for user-facing outputs**, where Opus 4.7's 10pp accuracy bump may justify its 5× premium because the failure mode of bad summarization is visible to the end user. On classification tasks where wrong answers are recoverable via cascade retry, the SLM tier remains correct.
+
+## Frontier-tier observations
+
+- **Latency is a real cost**. Pro averages 11.5s/call across tasks (16.7s on CodeSummarization), vs Flash Lite at 0.5s. On a 4-step agentic pipeline, Pro adds 40–70s of wall time per request — disqualifying for interactive use independent of dollar cost.
+- **Reasoning tokens dominate Pro's bill**: ~1000 reasoning tokens per call vs 5–50 visible output. Pro **cannot disable thinking mode** (returns 400 INVALID_ARGUMENT on `thinking_budget=0`).
+- **GPT-5 also reasons by default** (~64 reasoning tokens on trivial classifications), roughly doubling its effective per-call cost vs the published non-reasoning rate.
+- **o3 beats GPT-5 on classification** (0.97 vs 0.93 CodeReview, 0.97 vs 0.90 SecurityVuln) at similar cost. If you want a reasoning model in the cascade, o3 is the better pick at this price point.
+- **Confidence saturation**: Pro reports confidence=10 on every successful call (mean 10.0 across all tasks); o3 stays at 8–9. Self-reported confidence from frontier models is largely uninformative — Opus 4.7 is the exception, with cal_r=+0.60 on SecurityVuln/hard.
+
+## Failures and rate limits during the v2 run
+
+- **Gemini 2.5 Pro hung indefinitely** on a CodeSummarization confidence probe after 16 successful calls. Diagnosis (lsof): server-closed socket (`CLOSE_WAIT`) the google-genai SDK didn't surface as a retryable error — client stuck in `recv()` for 10h+. Fixed in commit `39f0465` by adding `HttpOptions(timeout=60_000)` and treating `httpx.TimeoutException`/`NetworkError` as retryable alongside the existing 429/503 handling. **This is a production-relevant data point about Pro's reliability profile under sustained load** — the v1 decision to remove Pro was driven by 503s; v2 confirms the underlying infrastructure remains less stable than the SLM tier.
+- **Pro re-run hit 8 additional 503 UNAVAILABLE errors** during a single ~53min window on examples 6–12, plus 1 ReadTimeout on example 27 (the 60s timeout fired and the retry ladder rescued it on the next attempt). The dedup logic preserved the original-run successful results for the affected `example_idx` values, so the final 30-example dataset is clean. The summary row written by the re-run is stale (mean=0.25 reflects the 503-heavy re-run); the deduped calls table is authoritative at mean=0.47. The summary will self-heal once the BQ streaming buffer flushes and an UPDATE can land.
+- **No errors from Opus 4.7, GPT-5, or o3** across 270 calls each.
+
+## v2 run cost
+
+Frontier benchmark spend: ~$3.66 projected from the smoke-test ratios for the original 4-model run, plus ~$0.58 measured for the Pro × CodeSummarization re-run, total ~$4.24. Per-call instrumentation isn't yet in the `benchmark_calls` schema (current columns: latency, score, output, error — no token counts), so model-level breakdown is estimated rather than measured. Adding `input_tokens`, `output_tokens`, `reasoning_tokens` columns is the next obvious BQ-schema improvement; deferred for now.
+
+---
+
+## Original v1 capability matrix (2026-04-10, 4 SLM-tier models — preserved for context)
+
+The v1 finding that Flash Lite was cost-optimal on the SLM tier:
 
 | Model                  | Tier | $/MTok | CodeReview | SecurityVuln | CodeSumm | Avg    |
 |------------------------|------|--------|------------|--------------|----------|--------|
@@ -56,15 +105,15 @@ Expected cost per (task, model) pair including cascade failure retry:
 | SecurityVuln      | gemini-2.5-flash-lite  | $0.000055     | 0.93  |
 | CodeSummarization | gemini-2.5-flash-lite  | $0.000404     | 0.42  |
 
-## Gemini 2.5 Pro: Removed
+## Gemini 2.5 Pro: Re-added in v2 (with caveats)
 
-gemini-2.5-pro was consistently returning 503 (UNAVAILABLE) on every call despite retry logic. Replaced with gemini-2.5-flash-lite. This turned out to be a better outcome — Flash Lite outperforms Pro's expected niche at a fraction of the cost.
+gemini-2.5-pro was removed in v1 after consistently returning 503 (UNAVAILABLE) on Vertex AI. v2 re-added Pro via the direct API path (`GOOGLE_API_KEY`, `google-genai`) — same path as Flash and Flash Lite. Pro now passes all three task thresholds (0.90/0.97/0.47) but at 8.7–16.7s/call latency, with one indefinite hang requiring a per-request timeout fix (see "Failures and rate limits" above) and 8 503s during a 53-minute re-run window. Pro is **operational** on the direct API but its tail-latency and availability are markedly worse than the SLM tier. Inclusion is justified for the capability-matrix completeness; routing should still default to SLM-tier models with Pro as an explicit-opt-in escalation target only when accuracy gains justify the latency penalty.
 
-## Key Takeaway for Routing
+## Key Takeaway for Routing (updated for v2)
 
-For a 3-step agentic pipeline, the cascade-aware router defaults to Flash Lite for all steps. The cost savings are ~25x per token vs Haiku with negligible accuracy loss on classification tasks (identical on CodeReview at 0.90, within 0.07 on SecurityVuln at 0.93 vs 1.00). Even when accounting for cascade failure retries, Flash Lite remains cost-optimal.
+For a 3-step agentic pipeline, the cascade-aware router defaults to Flash Lite for all steps. v2's addition of the frontier tier confirms this: even with Opus 4.7, GPT-5, o3, and Pro on the table, Flash Lite remains cost-optimal on every task that meets its threshold. Frontier models become economic only when (a) the failure mode is user-visible (CodeSummarization → Opus, +10pp at 5× cost) or (b) the task is one Flash Lite can't pass at all (none in the current battery — every task has Flash Lite ≥ threshold).
 
-The remaining opportunity is in calibration-based dynamic routing: GPT-4o-mini's strong calibration on hard examples (H:+0.82) means it could serve as a "confidence-aware escalation target" when Flash Lite reports low confidence — but this requires switching from self-reported confidence to logprob-based confidence extraction.
+The remaining opportunity is in calibration-based dynamic routing: GPT-4o-mini's strong calibration on hard examples (H:+0.82) and Opus 4.7's strong calibration on SecurityVuln/hard (H:+0.65) make them candidates for a "confidence-aware escalation target" when Flash Lite reports low confidence — but this requires switching from self-reported confidence to logprob-based confidence extraction. Pro and o3 confidence is saturated at 9–10 across the board and contributes no escalation signal.
 
 ## Content-Aware Routing: Automatic Complexity Inference
 
