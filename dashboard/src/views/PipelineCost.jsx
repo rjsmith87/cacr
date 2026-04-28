@@ -24,6 +24,17 @@ function formatPct(val) {
   return `${(Number(val) * 100).toFixed(1)}%`
 }
 
+// Color cascade-failure rate by severity. Cascade failure is the
+// project's central thesis metric — the rate at which a cheap step-1
+// mistake forces the pipeline to retry downstream — and a value above
+// 50% means the pipeline is broken more often than it's working.
+function cascadeFailColor(rate) {
+  if (rate == null) return 'text-gray-500'
+  if (rate >= 0.5) return 'text-red-400'
+  if (rate >= 0.3) return 'text-yellow-400'
+  return 'text-emerald-400'
+}
+
 const STRATEGY_META = {
   'all-haiku': { label: 'All Haiku', desc: 'Every step uses Claude Haiku ($1.00/MTok)', accent: 'amber' },
   'all-lite': { label: 'All Flash Lite', desc: 'Every step uses Gemini Flash Lite ($0.04/MTok)', accent: 'emerald' },
@@ -130,11 +141,22 @@ export default function PipelineCost() {
               <p className="text-xs text-gray-500 mb-4">{meta.desc}</p>
 
               {/* Cost — hero metric */}
-              <div className="mb-4">
+              <div className="mb-3">
                 <span className="text-xs uppercase tracking-wider text-gray-500">Cost per pipeline run</span>
                 <div className={`text-2xl font-mono font-bold mt-1 ${isCheapest ? 'text-emerald-400' : 'text-gray-200'}`}>
                   {formatCost(strategy.cost)}
                   {isCheapest && <span className="ml-2 text-xs text-emerald-500 uppercase tracking-wider font-semibold">lowest</span>}
+                </div>
+              </div>
+
+              {/* Cascade fail rate — project-thesis metric, surfaced
+                  alongside cost so it's not buried in the table at the
+                  bottom of the page. Color tracks severity:
+                  red ≥50%, yellow 30-50%, green <30%. */}
+              <div className="mb-4">
+                <span className="text-xs uppercase tracking-wider text-gray-500">Cascade fail rate</span>
+                <div className={`text-xl font-mono font-bold mt-1 ${cascadeFailColor(strategy.cascade_failure_rate)}`}>
+                  {formatPct(strategy.cascade_failure_rate)}
                 </div>
               </div>
 
