@@ -20,6 +20,7 @@ import os
 import sys
 
 from flask import Flask, jsonify, request, abort
+from flask_caching import Cache
 from flask_cors import CORS
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -27,6 +28,13 @@ sys.path.insert(0, _ROOT)
 
 app = Flask(__name__)
 CORS(app)
+
+# 5-minute in-memory cache for read-heavy BigQuery endpoints. SimpleCache
+# is process-local — adequate for our single-gunicorn-worker deployment
+# on Render. /health and /api/route are intentionally uncached: the
+# former feeds an external uptime monitor that needs to actually probe
+# the instance, the latter takes user-unique input every call.
+cache = Cache(app, config={"CACHE_TYPE": "SimpleCache", "CACHE_DEFAULT_TIMEOUT": 300})
 
 # Model used for ELI5 explanation endpoints.
 EXPLAIN_MODEL = "claude-sonnet-4-20250514"
@@ -93,6 +101,7 @@ def health_check():
 # ── GET /api/health ────────────────────────────────────────────────
 
 @app.route("/api/health")
+@cache.cached(timeout=300)
 def health():
     try:
         client = _bq_client()
@@ -122,6 +131,7 @@ def health():
 # ── GET /api/capability-matrix ─────────────────────────────────────
 
 @app.route("/api/capability-matrix")
+@cache.cached(timeout=300)
 def capability_matrix():
     try:
         client = _bq_client()
@@ -140,6 +150,7 @@ def capability_matrix():
 # ── GET /api/calibration ───────────────────────────────────────────
 
 @app.route("/api/calibration")
+@cache.cached(timeout=300)
 def calibration():
     try:
         client = _bq_client()
@@ -158,6 +169,7 @@ def calibration():
 # ── GET /api/pipeline-cost ─────────────────────────────────────────
 
 @app.route("/api/pipeline-cost")
+@cache.cached(timeout=300)
 def pipeline_cost():
     client = _bq_client()
     try:
@@ -175,6 +187,7 @@ def pipeline_cost():
 # ── GET /api/cost-matrix ───────────────────────────────────────────
 
 @app.route("/api/cost-matrix")
+@cache.cached(timeout=300)
 def cost_matrix():
     csv_path = os.path.join(_ROOT, "results", "cost_matrix.csv")
     if not os.path.exists(csv_path):
@@ -250,6 +263,7 @@ def route_prompt():
 # ── GET /api/findings ──────────────────────────────────────────────
 
 @app.route("/api/findings")
+@cache.cached(timeout=300)
 def findings():
     path = os.path.join(_ROOT, "FINDINGS.md")
     if not os.path.exists(path):
