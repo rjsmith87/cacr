@@ -225,8 +225,9 @@ class CACRRouter:
         ci_low = max(0, prob - 0.15)
         ci_high = min(1, prob + 0.15)
 
-        from router.cost_model import compute_expected_cost, MODEL_COSTS
-        cost = compute_expected_cost(MODEL_COSTS.get(model, 1e-6), prob)
+        from router.cost_model import compute_expected_cost, _rates_for
+        input_cost, output_cost = _rates_for(model)
+        cost = compute_expected_cost(input_cost, output_cost, prob)
 
         reasoning = (
             f"LogReg predicts {model} (P={prob:.2f}) for "
