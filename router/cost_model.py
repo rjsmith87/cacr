@@ -87,7 +87,13 @@ def compute_expected_cost(
 
 
 def build_cost_matrix_from_bq(project: str) -> list[dict[str, Any]]:
-    """Query BigQuery for latest benchmark summaries and build cost matrix."""
+    """Query BigQuery for latest benchmark summaries and build cost matrix.
+
+    Pulls the latest row per (task, model) pair across all runs rather
+    than `WHERE run_ts = MAX(run_ts)` — the v2 frontier run only contained
+    the four new models, so a single-run filter would drop the SLM tier
+    that was last benchmarked in v1.
+    """
     from google.cloud import bigquery
     client = bigquery.Client(project=project)
 
@@ -96,7 +102,9 @@ def build_cost_matrix_from_bq(project: str) -> list[dict[str, Any]]:
            calibration_r, mean_latency_ms, passes_threshold,
            calibration_by_difficulty
     FROM `cacr_results.benchmark_summaries`
-    WHERE run_ts = (SELECT MAX(run_ts) FROM `cacr_results.benchmark_summaries`)
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY task, model ORDER BY run_ts DESC
+    ) = 1
     ORDER BY task, cost_per_token
     """
     rows = list(client.query(query).result())

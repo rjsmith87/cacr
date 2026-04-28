@@ -135,11 +135,19 @@ def health():
 def capability_matrix():
     try:
         client = _bq_client()
+        # Pull the latest summary row for each (task, model) across ALL runs.
+        # The previous WHERE run_ts = MAX(run_ts) filter assumed every run
+        # contained every model — true for v1 but not for the v2 frontier
+        # run that only included the four new models. With this query, the
+        # dashboard surfaces the full 8-model matrix from whichever run
+        # most recently scored each (task, model) pair.
         rows = list(client.query("""
             SELECT task, model, tier, mean_score, mean_confidence,
                    calibration_r, mean_latency_ms, passes_threshold
             FROM `cacr_results.benchmark_summaries`
-            WHERE run_ts = (SELECT MAX(run_ts) FROM `cacr_results.benchmark_summaries`)
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY task, model ORDER BY run_ts DESC
+            ) = 1
             ORDER BY task, model
         """).result())
         return jsonify([dict(r) for r in rows])
@@ -154,12 +162,23 @@ def capability_matrix():
 def calibration():
     try:
         client = _bq_client()
+        # For each (model, task) pair, return all calls from that pair's
+        # most recent run. Same rationale as /api/capability-matrix: the
+        # MAX(run_ts) filter dropped any model not in the latest run, so
+        # post-v2 the scatter only showed the four frontier models. This
+        # version pulls all 8 models' latest calibration data.
         rows = list(client.query("""
-            SELECT model, task, difficulty, score, confidence_score
-            FROM `cacr_results.benchmark_calls`
-            WHERE run_ts = (SELECT MAX(run_ts) FROM `cacr_results.benchmark_calls`)
-              AND confidence_score IS NOT NULL
-            ORDER BY model, task
+            WITH latest_run_per_pair AS (
+                SELECT task, model, MAX(run_ts) AS latest_ts
+                FROM `cacr_results.benchmark_calls`
+                GROUP BY task, model
+            )
+            SELECT c.model, c.task, c.difficulty, c.score, c.confidence_score
+            FROM `cacr_results.benchmark_calls` c
+            JOIN latest_run_per_pair l
+              ON c.task = l.task AND c.model = l.model AND c.run_ts = l.latest_ts
+            WHERE c.confidence_score IS NOT NULL
+            ORDER BY c.model, c.task
         """).result())
         return jsonify([dict(r) for r in rows])
     except Exception as exc:
