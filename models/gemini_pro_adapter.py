@@ -5,11 +5,18 @@ Uses GOOGLE_API_KEY. Capped at 3 retries on 503/429 per project policy
 behave better, but we don't loop forever and burn keys — after 3
 attempts with exponential backoff, the call raises and the runner
 records it as an error).
+
+Per-request timeout: an earlier run hung for 10+ hours on a CodeSum
+confidence probe — the server closed its side of the socket but the
+SDK never surfaced it as a retryable error, leaving the client stuck
+in recv(). We set an explicit 60s timeout via HttpOptions and treat
+httpx timeout/network exceptions as retryable.
 """
 
 import os
 import time
 
+import httpx
 from google import genai
 from google.genai import errors as genai_errors
 
@@ -18,6 +25,7 @@ from models.gemini_adapter import _extract_retry_delay
 
 _MAX_RETRIES = 3
 _BASE_DELAY = 4.0  # seconds; doubles each attempt → 4, 8, 16
+_REQUEST_TIMEOUT_MS = 60_000  # 60s; Pro summarization observed at 10-32s
 
 
 class GeminiPro(Model):
@@ -47,6 +55,7 @@ class GeminiPro(Model):
         self._config = genai.types.GenerateContentConfig(
             max_output_tokens=max_tokens,
             temperature=temperature,
+            http_options=genai.types.HttpOptions(timeout=_REQUEST_TIMEOUT_MS),
         )
 
     def generate(self, prompt: str) -> str:
@@ -68,4 +77,11 @@ class GeminiPro(Model):
                     time.sleep(delay)
                     continue
                 raise
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                # Socket hang / server-closed-but-SDK-stuck / DNS / connect
+                # failures — all retryable from our side.
+                last_exc = exc
+                delay = _BASE_DELAY * (2 ** attempt)
+                time.sleep(delay)
+                continue
         raise last_exc  # type: ignore[misc]
