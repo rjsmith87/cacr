@@ -7,7 +7,7 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 export default function RouterPlayground() {
   const [form, setForm] = useState({
     code_snippet: '',
-    task: 'CodeReview',
+    task: '',
     complexity: 'auto',
     pipeline_position: 1,
   })
@@ -72,6 +72,7 @@ export default function RouterPlayground() {
                 onChange={(e) => updateField('task', e.target.value)}
                 className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30"
               >
+                <option value="" disabled>Select task type...</option>
                 <option value="CodeReview">Code Review</option>
                 <option value="SecurityVuln">Security Vuln</option>
                 <option value="CodeSummarization">Code Summarization</option>
@@ -106,7 +107,7 @@ export default function RouterPlayground() {
 
           <button
             type="submit"
-            disabled={loading || !form.code_snippet.trim()}
+            disabled={loading || !form.code_snippet.trim() || !form.task}
             className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium py-2.5 rounded-lg transition-colors text-sm mt-auto"
           >
             {loading ? 'Routing...' : 'Route Request'}
