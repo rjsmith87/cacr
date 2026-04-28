@@ -64,8 +64,10 @@ def test_complexity_hard_for_eval():
 
 
 def test_complexity_medium_for_moderate_control_flow():
-    # ~25 LOC + 5 control-flow keywords → both LOC and CF vote medium.
-    body = "\n".join([f"v{i} = {i}" for i in range(20)])
+    # ~35 LOC + 5 control-flow keywords → both LOC and CF vote medium.
+    # LOC threshold for medium is now >=30 (was >=20); test fixture
+    # bumped accordingly.
+    body = "\n".join([f"v{i} = {i}" for i in range(30)])
     branches = "\n".join([f"if v{i} > 0: pass" for i in range(5)])
     assert infer_complexity(body + "\n" + branches) == "medium"
 
