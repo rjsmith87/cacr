@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import CapabilityMatrix from './views/CapabilityMatrix'
 import CalibrationExplorer from './views/CalibrationExplorer'
+import CascadeDemo from './views/CascadeDemo'
 import PipelineCost from './views/PipelineCost'
 import RouterPlayground from './views/RouterPlayground'
 import ModelEfficiency from './views/ModelEfficiency'
@@ -13,6 +14,7 @@ const navItems = [
   { to: '/pipeline', label: 'Pipeline Cost' },
   { to: '/router', label: 'Router Playground' },
   { to: '/efficiency', label: 'Model Efficiency' },
+  { to: '/cascade', label: 'Cascade Demo' },
 ]
 
 function App() {
@@ -58,6 +60,7 @@ function App() {
             <Route path="/pipeline" element={<PipelineCost />} />
             <Route path="/router" element={<RouterPlayground />} />
             <Route path="/efficiency" element={<ModelEfficiency />} />
+            <Route path="/cascade" element={<CascadeDemo />} />
           </Routes>
         </main>
 
