@@ -19,6 +19,61 @@ const DEFAULT_FORM = {
   escalation_threshold: 8,
 }
 
+// Quick-start example cards. Snippets verified in the prior research
+// pass — at threshold=8 SSRF triggers a step-2 escalation, the
+// generate_token snippet exposes the overconfident-wrong blind spot
+// (Flash Lite says vulnerable=False with conf=10, Flash says weak_prng
+// with vulnerable=True), and the timing snippet produces full
+// agreement with no escalation.
+const EXAMPLES = [
+  {
+    title: 'SSRF Detection',
+    caption: 'Watch CACR escalate when confidence drops.',
+    form: {
+      code_snippet: `import requests
+def fetch_avatar(url):
+    return requests.get(url, timeout=5).content
+`,
+      task: 'SecurityVuln',
+      strategy_a: 'gemini-2.5-flash',
+      strategy_b: 'cacr',
+      escalation_threshold: 8,
+    },
+  },
+  {
+    title: 'Insecure Random',
+    caption: 'The blind spot: wrong and confident.',
+    form: {
+      code_snippet: `import random
+def generate_token():
+    return ''.join(random.choices('abcdefghijklmnopqrstuvwxyz0123456789', k=32))
+`,
+      task: 'SecurityVuln',
+      strategy_a: 'gemini-2.5-flash',
+      strategy_b: 'cacr',
+      escalation_threshold: 8,
+    },
+  },
+  {
+    title: 'Timing Side-Channel',
+    caption: 'Both models agree — no escalation needed.',
+    form: {
+      code_snippet: `def check_password(stored, provided):
+    if len(stored) != len(provided):
+        return False
+    for a, b in zip(stored, provided):
+        if a != b:
+            return False
+    return True
+`,
+      task: 'SecurityVuln',
+      strategy_a: 'gemini-2.5-flash',
+      strategy_b: 'cacr',
+      escalation_threshold: 8,
+    },
+  },
+]
+
 // 9 strategy options — 8 single-model strategies + CACR.
 const STRATEGY_OPTIONS = [
   { value: 'cacr', label: 'CACR Routed' },
@@ -362,6 +417,33 @@ function ComparisonBar({ result }) {
   )
 }
 
+// ── Example cards ────────────────────────────────────────────────────
+function ExampleCards({ onPick, disabled, cooldownRemaining }) {
+  return (
+    <div className="mt-6">
+      <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Try these examples</h3>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {EXAMPLES.map(ex => (
+          <button
+            key={ex.title}
+            type="button"
+            disabled={disabled}
+            onClick={() => onPick(ex.form)}
+            className="bg-gray-900 border border-gray-800 rounded-lg p-4 text-left hover:border-indigo-700/50 hover:bg-gray-900/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title={disabled && cooldownRemaining > 0 ? `Cooldown: ${cooldownRemaining}s remaining` : undefined}
+          >
+            <div className="text-sm font-semibold text-gray-200">{ex.title}</div>
+            <div className="text-xs text-gray-500 mt-1.5">{ex.caption}</div>
+            <div className="text-[10px] text-gray-600 mt-3 font-mono uppercase tracking-wider">
+              {strategyLabel(ex.form.strategy_a)} vs {strategyLabel(ex.form.strategy_b)} · threshold {ex.form.escalation_threshold}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Run form ─────────────────────────────────────────────────────────
 function RunForm({ form, setForm, onSubmit, loading, cooldownRemaining, error }) {
   const cooldownActive = cooldownRemaining > 0
@@ -688,6 +770,17 @@ export default function CascadeDemo() {
           error={error}
         />
       </div>
+
+      {/* Example cards — clicking one fills the form AND fires the run.
+          Disabled during cooldown to match the form-submit button. */}
+      <ExampleCards
+        onPick={(formValues) => {
+          setForm(formValues)
+          runPipeline(formValues)
+        }}
+        disabled={loading || cooldownRemaining > 0}
+        cooldownRemaining={cooldownRemaining}
+      />
     </div>
   )
 }
