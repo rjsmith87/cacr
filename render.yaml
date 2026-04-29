@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: starter
     buildCommand: pip install -r requirements-api.txt
-    startCommand: gunicorn api.main:app --bind 0.0.0.0:$PORT --workers 2 --timeout 180
+    startCommand: gunicorn api.main:app --bind 0.0.0.0:$PORT --workers 2 --timeout 180 --preload --max-requests 200 --max-requests-jitter 50
     envVars:
       - key: GCP_PROJECT
         sync: false

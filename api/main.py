@@ -27,6 +27,17 @@ from flask_cors import CORS
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 
+# Eager imports of the heavy modules. Without --preload these get
+# loaded inside each gunicorn worker on first request, doubling
+# memory per worker and triggering OOM kills under concurrent load
+# (observed 2026-04-29 12:46 UTC: pid:39 SIGKILL'd mid-ssl.read).
+# With gunicorn --preload, these run once in the master process and
+# are shared across forked workers via copy-on-write.
+from pipelines.cascade_pipeline import run_pipeline as _cascade_run_pipeline  # noqa: E402, F401
+from router.complexity import infer_complexity as _infer_complexity  # noqa: E402, F401
+from router.cost_model import MODEL_COSTS as _MODEL_COSTS  # noqa: E402, F401
+from router.policy import CACRRouter as _CACRRouter, LookupTableRouter as _LookupTableRouter  # noqa: E402, F401
+
 app = Flask(__name__)
 
 # CORS allowlist — production dashboard origin and the Vite dev server.
