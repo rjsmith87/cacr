@@ -27,16 +27,26 @@ from flask_cors import CORS
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 
-# Eager imports of the heavy modules. Without --preload these get
-# loaded inside each gunicorn worker on first request, doubling
-# memory per worker and triggering OOM kills under concurrent load
-# (observed 2026-04-29 12:46 UTC: pid:39 SIGKILL'd mid-ssl.read).
-# With gunicorn --preload, these run once in the master process and
-# are shared across forked workers via copy-on-write.
+# Eager imports of the SHAPE-defining modules — function definitions,
+# the cost-matrix dict, the LookupTableRouter (CSV-only, no sklearn).
+# CACRRouter and the model adapters are intentionally NOT eager-imported
+# even though they're used by /api/route and /api/cascade-compare:
+# CACRRouter pulls scikit-learn (~150 MB), and the model adapters each
+# pull their respective SDK (anthropic / openai / google-genai). On
+# Render Starter (512 MB), eager-loading all of those at app boot
+# triggers OOM kills mid-request once a cascade pipeline run starts
+# allocating per-call response buffers (observed 2026-04-29 12:46 UTC
+# and 12:57:20 UTC: gunicorn worker SIGKILL'd during ssl.recv).
+#
+# Instead, the cascade_router._default_model_runner now imports each
+# adapter just-in-time based on the requested model_name, so a
+# cascade-compare run that only touches Flash + Flash Lite + GPT-4o-mini
+# never pays the import cost of the Anthropic, Opus, GPT-5, o3, or Pro
+# adapters.
 from pipelines.cascade_pipeline import run_pipeline as _cascade_run_pipeline  # noqa: E402, F401
 from router.complexity import infer_complexity as _infer_complexity  # noqa: E402, F401
 from router.cost_model import MODEL_COSTS as _MODEL_COSTS  # noqa: E402, F401
-from router.policy import CACRRouter as _CACRRouter, LookupTableRouter as _LookupTableRouter  # noqa: E402, F401
+from router.policy import LookupTableRouter as _LookupTableRouter  # noqa: E402, F401
 
 app = Flask(__name__)
 

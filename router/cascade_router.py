@@ -62,34 +62,52 @@ class CascadeResult:
     escalation_error: str | None = None
 
 
+# Adapter location map: model name → (module path, class name). Used by
+# `_default_model_runner` to import only the adapter that's actually
+# needed per call. Importing all 8 eagerly pulls anthropic + openai +
+# google-genai SDKs at once (~250-300 MB resident on Render Starter),
+# which leaves no headroom for per-request response buffers and
+# triggers gunicorn OOM kills during ssl.recv. Loading just-in-time
+# means a Flash + Flash Lite + GPT-4o-mini request only pays for
+# google-genai + openai, never the others.
+_ADAPTER_MAP: dict[str, tuple[str, str]] = {
+    "claude-haiku-4-5":      ("models.anthropic_adapter", "ClaudeHaiku"),
+    "claude-opus-4-7":       ("models.claude_opus_adapter", "ClaudeOpus"),
+    "gemini-2.5-flash":      ("models.gemini_adapter", "GeminiFlash"),
+    "gemini-2.5-flash-lite": ("models.gemini_flash_lite_adapter", "GeminiFlashLite"),
+    "gemini-2.5-pro":        ("models.gemini_pro_adapter", "GeminiPro"),
+    "gpt-4o-mini":           ("models.openai_adapter", "GPT4oMini"),
+    "gpt-5":                 ("models.gpt5_adapter", "GPT5"),
+    "o3":                    ("models.o3_adapter", "O3"),
+}
+
+
+def _resolve_adapter_cls(model_name: str):
+    """Just-in-time import of the adapter class for `model_name`.
+    Python caches the import in sys.modules, so subsequent calls for
+    the same model are free."""
+    spec = _ADAPTER_MAP.get(model_name)
+    if spec is None:
+        return None
+    import importlib
+    mod_path, cls_name = spec
+    mod = importlib.import_module(mod_path)
+    return getattr(mod, cls_name, None)
+
+
 # ── Default model runner ─────────────────────────────────────────────
 def _default_model_runner(model_name: str, prompt: str) -> dict:
     """Real-API model invocation. Returns a dict the router can consume.
 
     Constructs a fresh adapter on each call so the per-instance state
     (e.g. the GeminiFlash pacing timestamp) doesn't accumulate across
-    requests on a long-lived router instance.
+    requests on a long-lived router instance. The adapter class is
+    looked up via just-in-time import (see `_resolve_adapter_cls`) so
+    only the SDKs for the models actually used in the request get
+    loaded — keeps memory footprint bounded on memory-constrained
+    deploys.
     """
-    from models.anthropic_adapter import ClaudeHaiku
-    from models.claude_opus_adapter import ClaudeOpus
-    from models.gemini_adapter import GeminiFlash
-    from models.gemini_flash_lite_adapter import GeminiFlashLite
-    from models.gemini_pro_adapter import GeminiPro
-    from models.gpt5_adapter import GPT5
-    from models.o3_adapter import O3
-    from models.openai_adapter import GPT4oMini
-
-    adapters = {
-        "claude-haiku-4-5": ClaudeHaiku,
-        "claude-opus-4-7": ClaudeOpus,
-        "gemini-2.5-flash": GeminiFlash,
-        "gemini-2.5-flash-lite": GeminiFlashLite,
-        "gemini-2.5-pro": GeminiPro,
-        "gpt-4o-mini": GPT4oMini,
-        "gpt-5": GPT5,
-        "o3": O3,
-    }
-    cls = adapters.get(model_name)
+    cls = _resolve_adapter_cls(model_name)
     if cls is None:
         return {
             "output": "",
