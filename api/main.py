@@ -339,6 +339,15 @@ def cost_matrix():
 
 @app.route("/api/route", methods=["POST"])
 def route_prompt():
+    ok, retry_in = _check_rate_limit(_ROUTE_RATE, _client_ip(), _ROUTE_PER_MINUTE)
+    if not ok:
+        resp = jsonify({
+            "error": f"rate limited: {_ROUTE_PER_MINUTE} requests per minute per IP",
+            "retry_in_seconds": retry_in,
+        })
+        resp.headers["Retry-After"] = str(retry_in)
+        return resp, 429
+
     data = request.get_json(force=True, silent=True) or {}
 
     prompt = _clean_str(data.get("prompt"), field="prompt", max_len=5000)
@@ -548,8 +557,49 @@ _CASCADE_CONTEXT_HINTS = {
 
 _CASCADE_RATE_LIMIT_LAST: dict[str, float] = {}
 _CASCADE_COOLDOWN_S = 30
-_VALID_TASKS = {"CodeReview", "SecurityVuln", "CodeSummarization"}
 _MAX_CODE_CHARS = 5000
+
+# Sliding-window rate limits for the upstream-paid endpoints. Each dict
+# maps client IP → list of recent request timestamps. We prune entries
+# older than the window on each access. Process-local; the existing
+# multi-worker caveat applies (a determined client can squeeze through
+# 1 extra call per worker), but for an interactive demo tool that's
+# acceptable. Hard-cap each dict at 10k entries to bound memory if
+# someone tries to fill it.
+_EXPLAIN_RATE: dict[str, list[float]] = {}
+_EXPLAIN_PER_MINUTE = 10
+_ROUTE_RATE: dict[str, list[float]] = {}
+_ROUTE_PER_MINUTE = 30
+_RATE_WINDOW_S = 60
+_RATE_DICT_HARD_CAP = 10_000
+
+
+def _check_rate_limit(state: dict[str, list[float]], ip: str, max_per_window: int):
+    """Sliding-window rate-limit check. Returns (allowed, retry_in_seconds).
+    On allowed=True, the caller's timestamp has been recorded.
+    On allowed=False, retry_in_seconds is when the oldest timestamp
+    will fall out of the window."""
+    now = time.time()
+    cutoff = now - _RATE_WINDOW_S
+
+    # Bound dict size before mutating.
+    if len(state) > _RATE_DICT_HARD_CAP:
+        state.clear()
+
+    history = state.setdefault(ip, [])
+    # Prune timestamps older than the window.
+    while history and history[0] < cutoff:
+        history.pop(0)
+
+    if len(history) >= max_per_window:
+        retry_in = max(1, round(_RATE_WINDOW_S - (now - history[0])) + 1)
+        return False, retry_in
+
+    history.append(now)
+    return True, None
+
+
+_VALID_TASKS = {"CodeReview", "SecurityVuln", "CodeSummarization"}
 
 
 def _client_ip() -> str:
@@ -697,6 +747,15 @@ def explain():
     User-supplied content is wrapped in XML delimiter tags and the
     system prompt instructs Claude to treat tagged content as data,
     not as instructions — see _EXPLAIN_SYSTEM_INSTRUCTION above."""
+    ok, retry_in = _check_rate_limit(_EXPLAIN_RATE, _client_ip(), _EXPLAIN_PER_MINUTE)
+    if not ok:
+        resp = jsonify({
+            "error": f"rate limited: {_EXPLAIN_PER_MINUTE} requests per minute per IP",
+            "retry_in_seconds": retry_in,
+        })
+        resp.headers["Retry-After"] = str(retry_in)
+        return resp, 429
+
     data = request.get_json(force=True, silent=True) or {}
 
     summary = _clean_str(data.get("data_summary"), field="data_summary", max_len=5000)
