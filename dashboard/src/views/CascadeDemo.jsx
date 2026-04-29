@@ -754,6 +754,7 @@ export default function CascadeDemo() {
           promptHint={eliState.hint}
           warning={eliState.warning}
           taskName={result.task}
+          cascadeContext={eliState.context}
           refreshKey={`${result.strategy_a.strategy}|${result.strategy_b.strategy}|${result.escalation_threshold}|${eliState.context}`}
         />
       )}

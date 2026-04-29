@@ -364,14 +364,59 @@ def explain_calibration():
 # "rock-bottom pricing" for a model that's wrong more than half the time
 # is the bug, not the feature. The "winner / matches performance / same
 # result" cluster was added when the same pattern appeared on the Pipeline
-# Cost tab: a 4-strategy comparison framed as "CACR is the clear winner"
-# while every strategy was failing 70-80% of the time.
+# Cost tab. The "smart trade-off / right call / trust the result" cluster
+# was added for the Cascade Comparison tool, where confidence-based
+# escalation only catches uncertain models — never overconfident wrong
+# ones — and the explanation must not paper over that limit.
 _BANNED_PHRASES_WHEN_BELOW_THRESHOLD = (
     '"good value", "good deal", "adequate performance", "passes our minimum '
     'standards", "meets our minimum bar", "acceptable quality", "rock-bottom '
     'pricing", "reliable choice", "clear winner", "winner", "matches '
-    'performance", "comparable accuracy", "same result"'
+    'performance", "comparable accuracy", "same result", "smart trade-off", '
+    '"smart tradeoff", "the right call", "trust the result", "reliable '
+    'answer", "best of both worlds", "safely escalated"'
 )
+
+
+# Cascade-comparison contexts. The dashboard's cascade-comparison tab passes
+# a `cascade_context` value with the request when the data summary is a
+# cascade-pipeline run. The server appends a tailored instruction block to
+# the prompt so Claude reads the data through the right lens — without
+# trusting the dashboard to fully spell out the framing in `warning`.
+_CASCADE_CONTEXT_HINTS = {
+    "escalation_fired": (
+        "This is a cascade-comparison run where confidence-based escalation "
+        "fired on at least one step. Explain plainly: which step escalated, "
+        "what the initial vs escalated confidence numbers were, whether the "
+        "classification actually changed, and whether the extra cost was "
+        "worth it given the outcome. Do not call the escalation a 'smart "
+        "trade-off' or 'the right call' — describe what happened and let "
+        "the reader judge."
+    ),
+    "overconfident_wrong": (
+        "This is the runtime-confidence blind spot. The two strategies "
+        "produced different classifications, but neither one's confidence "
+        "ever dropped below the user's threshold, so the cascade router did "
+        "not escalate. State this plainly: confidence-based escalation only "
+        "catches uncertain models, not overconfident wrong ones. Reference "
+        "the actual confidence numbers and the specific disagreement (which "
+        "field — severity, vulnerability type, or vulnerable yes/no — "
+        "differs between the strategies). Note that this is exactly why CACR "
+        "maintains benchmark data as a routing-time safety net alongside "
+        "runtime signals — a model with a poor benchmark on this task "
+        "shouldn't have been picked for it in the first place. Do not "
+        "characterize either model as trustworthy on this snippet."
+    ),
+    "agreement": (
+        "This is the cascade-comparison agreement case: both strategies "
+        "produced the same classification, no escalation fired. Explain in "
+        "plain English whether the cost difference is meaningful in "
+        "practice — quote the actual dollar amounts — and what an "
+        "agreement like this does and does not tell you about the routing "
+        "decision. Agreement on one snippet is not a guarantee, and the "
+        "explanation should say so explicitly."
+    ),
+}
 
 
 # ── POST /api/cascade-compare ──────────────────────────────────────
@@ -482,6 +527,7 @@ def explain():
     hint = data.get("prompt_hint", "")
     task_name = data.get("task_name")
     warning = data.get("warning")
+    cascade_context = data.get("cascade_context")
     if not summary:
         abort(400, "Missing 'data_summary'")
 
@@ -512,6 +558,17 @@ def explain():
             f"{_BANNED_PHRASES_WHEN_BELOW_THRESHOLD}. Do not characterize "
             f"any option as a good choice; characterize the recommended one "
             f"as the least-bad available option, and say so."
+        )
+    if cascade_context and cascade_context in _CASCADE_CONTEXT_HINTS:
+        # Cascade-specific framing layered on top of the generic warning
+        # block when the dashboard's cascade-comparison tool is the
+        # caller. Banned-phrases instruction also applies to this context
+        # so the explanation can't slip into "smart trade-off" framing.
+        parts.append(
+            f"CASCADE CONTEXT — {cascade_context}:\n"
+            f"{_CASCADE_CONTEXT_HINTS[cascade_context]}\n\n"
+            f"Banned phrases (do not use): "
+            f"{_BANNED_PHRASES_WHEN_BELOW_THRESHOLD}."
         )
     if hint:
         parts.append(hint)
