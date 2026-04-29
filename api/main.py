@@ -40,6 +40,37 @@ ALLOWED_ORIGINS = [
 ]
 CORS(app, origins=ALLOWED_ORIGINS)
 
+
+# ── Shared input-validation helpers ────────────────────────────────
+#
+# Every endpoint that accepts user-supplied strings runs them through
+# `_clean_str` to strip null bytes (which break some parsers and can
+# confuse downstream model APIs) and enforce a length cap. Any field
+# the schema doesn't know about is naturally ignored — we read by
+# explicit key, so unexpected fields in the JSON body are no-ops.
+
+_VALID_TASKS = {"CodeReview", "SecurityVuln", "CodeSummarization"}
+_VALID_TASK_FAMILIES = {"classification", "generation"}
+_VALID_COMPLEXITIES = {"auto", "easy", "medium", "hard", ""}
+_VALID_CASCADE_CONTEXTS = {"escalation_fired", "overconfident_wrong", "agreement"}
+
+
+def _clean_str(value, *, field: str, max_len: int, allow_empty: bool = False) -> str:
+    """Validate a user-supplied string field. Strips null bytes,
+    enforces a length cap, and aborts 400 on schema violation."""
+    if value is None:
+        if allow_empty:
+            return ""
+        abort(400, f"{field} (string) is required")
+    if not isinstance(value, str):
+        abort(400, f"{field} must be a string")
+    cleaned = value.replace("\x00", "")
+    if not cleaned.strip() and not allow_empty:
+        abort(400, f"{field} must be non-empty")
+    if len(cleaned) > max_len:
+        abort(400, f"{field} exceeds {max_len} character limit (got {len(cleaned)})")
+    return cleaned
+
 # 5-minute in-memory cache for read-heavy BigQuery endpoints. SimpleCache
 # is process-local — adequate for our single-gunicorn-worker deployment
 # on Render. /health and /api/route are intentionally uncached: the
@@ -244,20 +275,28 @@ def cost_matrix():
 
 @app.route("/api/route", methods=["POST"])
 def route_prompt():
-    data = request.get_json(force=True)
-    if not data or "prompt" not in data:
-        abort(400, "Missing 'prompt' in request body")
+    data = request.get_json(force=True, silent=True) or {}
+
+    prompt = _clean_str(data.get("prompt"), field="prompt", max_len=5000)
+
+    task = data.get("task", "CodeReview")
+    if task not in _VALID_TASKS:
+        abort(400, f"task must be one of: {sorted(_VALID_TASKS)}")
+
+    task_family = data.get("task_family", "classification")
+    if task_family not in _VALID_TASK_FAMILIES:
+        abort(400, f"task_family must be one of: {sorted(_VALID_TASK_FAMILIES)}")
+
+    complexity = data.get("complexity", "auto") or "auto"
+    if complexity not in _VALID_COMPLEXITIES:
+        abort(400, f"complexity must be one of: {sorted(_VALID_COMPLEXITIES)}")
 
     from router.complexity import infer_complexity
     from router.policy import CACRRouter, LookupTableRouter
 
-    task = data.get("task", "CodeReview")
-    task_family = data.get("task_family", "classification")
-
-    complexity = data.get("complexity", "auto")
     inferred = None
     if complexity == "auto" or not complexity:
-        inferred = infer_complexity(data["prompt"])
+        inferred = infer_complexity(prompt)
         complexity = inferred
 
     # Try the trained CACRRouter first — it actually consumes complexity
@@ -268,7 +307,7 @@ def route_prompt():
     cacr.load()
     if cacr._clf is not None:
         decision = cacr.route(
-            data["prompt"],
+            prompt,
             task_family=task_family,
             complexity=complexity,
         )
@@ -477,11 +516,8 @@ def cascade_compare():
     data = request.get_json(force=True, silent=True) or {}
 
     # ── Validate inputs ────────────────────────────────────────────
-    code = data.get("code_snippet")
-    if not isinstance(code, str) or not code.strip():
-        abort(400, "code_snippet (non-empty string) is required")
-    if len(code) > _MAX_CODE_CHARS:
-        abort(400, f"code_snippet exceeds {_MAX_CODE_CHARS} character limit")
+    code = _clean_str(data.get("code_snippet"), field="code_snippet",
+                      max_len=_MAX_CODE_CHARS)
 
     task = data.get("task")
     if task not in _VALID_TASKS:
@@ -532,14 +568,22 @@ def explain():
     the wrong task. When `warning` is supplied (router below-threshold path),
     the prompt template forces honest framing and bans the marketing-style
     phrases that previously slipped into low-score explanations."""
-    data = request.get_json(force=True)
-    summary = data.get("data_summary", "")
-    hint = data.get("prompt_hint", "")
+    data = request.get_json(force=True, silent=True) or {}
+
+    summary = _clean_str(data.get("data_summary"), field="data_summary", max_len=5000)
+    hint = _clean_str(data.get("prompt_hint", ""), field="prompt_hint",
+                      max_len=2000, allow_empty=True)
     task_name = data.get("task_name")
+    if task_name is not None:
+        task_name = _clean_str(task_name, field="task_name", max_len=200,
+                               allow_empty=True) or None
     warning = data.get("warning")
+    if warning is not None:
+        warning = _clean_str(warning, field="warning", max_len=2000,
+                             allow_empty=True) or None
     cascade_context = data.get("cascade_context")
-    if not summary:
-        abort(400, "Missing 'data_summary'")
+    if cascade_context is not None and cascade_context not in _VALID_CASCADE_CONTEXTS:
+        abort(400, f"cascade_context must be one of: {sorted(_VALID_CASCADE_CONTEXTS)}")
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
