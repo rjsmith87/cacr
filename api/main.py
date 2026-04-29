@@ -41,6 +41,70 @@ ALLOWED_ORIGINS = [
 CORS(app, origins=ALLOWED_ORIGINS)
 
 
+# ── Global error handlers ──────────────────────────────────────────
+#
+# Production responses must never leak stack traces, internal paths,
+# environment details, or model SDK error strings. Every error path
+# below produces a clean JSON envelope; the verbose detail goes to
+# the application log via app.logger only.
+#
+# Flask's debug flag is False by default. The if __name__ block at
+# the bottom of this file sets debug=True, but Render runs the app
+# under gunicorn — which imports the `app` object directly and never
+# executes that __main__ block — so production stays in production
+# mode. The `assert not app.debug` below makes the contract explicit.
+
+from werkzeug.exceptions import HTTPException  # noqa: E402
+
+assert not app.debug, "Flask debug mode must be disabled in production"
+
+
+@app.errorhandler(400)
+def _handle_400(err):
+    detail = err.description if isinstance(err, HTTPException) else "bad request"
+    return jsonify({"error": "bad request", "detail": detail}), 400
+
+
+@app.errorhandler(404)
+def _handle_404(_err):
+    return jsonify({"error": "not found"}), 404
+
+
+@app.errorhandler(405)
+def _handle_405(_err):
+    return jsonify({"error": "method not allowed"}), 405
+
+
+@app.errorhandler(429)
+def _handle_429(err):
+    # /api/cascade-compare and (post-Fix-5) /api/explain + /api/route
+    # build their own 429 JSON responses with a Retry-After header.
+    # This handler only catches abort(429) calls that bypass that
+    # path — preserve the message but never the exception trace.
+    detail = err.description if isinstance(err, HTTPException) else "rate limited"
+    return jsonify({"error": "rate limited", "detail": detail}), 429
+
+
+@app.errorhandler(500)
+def _handle_500(err):
+    app.logger.exception("internal error: %r", err)
+    return jsonify({"error": "internal server error"}), 500
+
+
+@app.errorhandler(Exception)
+def _handle_uncaught(err):
+    """Catch-all for exceptions Flask wouldn't otherwise convert into
+    one of the HTTP status handlers above. Without this, gunicorn
+    would render its own generic 500 HTML page on truly unexpected
+    errors — leaking the gunicorn signature and any traceback the
+    server was configured to surface."""
+    if isinstance(err, HTTPException):
+        # Let Flask's standard handlers (400/404/etc above) handle these.
+        return err
+    app.logger.exception("uncaught exception: %r", err)
+    return jsonify({"error": "internal server error"}), 500
+
+
 # ── Shared input-validation helpers ────────────────────────────────
 #
 # Every endpoint that accepts user-supplied strings runs them through
