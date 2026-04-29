@@ -28,7 +28,17 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 
 app = Flask(__name__)
-CORS(app)
+
+# CORS allowlist — production dashboard origin and the Vite dev server.
+# Replaces the previous wildcard CORS(app) which echoed any Origin back as
+# Access-Control-Allow-Origin. With an explicit list, requests from any
+# other origin get no ACAO header — the browser will block the response,
+# while the server itself still answers (CORS is a client-side enforcement).
+ALLOWED_ORIGINS = [
+    "https://cacr-dashboard.onrender.com",
+    "http://localhost:5173",
+]
+CORS(app, origins=ALLOWED_ORIGINS)
 
 # 5-minute in-memory cache for read-heavy BigQuery endpoints. SimpleCache
 # is process-local — adequate for our single-gunicorn-worker deployment
