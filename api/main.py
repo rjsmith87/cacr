@@ -693,6 +693,16 @@ def cascade_compare():
         return jsonify(result)
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+    finally:
+        # The cascade pipeline instantiates 6+ fresh adapter objects per
+        # call, each holding an SDK client + an HTTP connection pool.
+        # On a 512 MB Render Free worker those pile up faster than CPython
+        # reclaims them by reference-count drop alone, and we've seen
+        # OOM SIGKILLs mid-ssl.recv. Forcing a full GC sweep after the
+        # response is rendered evicts the now-unreferenced adapters
+        # before the next request arrives.
+        import gc
+        gc.collect()
 
 
 # Prompt-injection defense for /api/explain. The endpoint accepts

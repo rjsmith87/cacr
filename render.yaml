@@ -2,7 +2,7 @@ services:
   - type: web
     name: cacr-api
     runtime: python
-    plan: starter
+    plan: standard
     buildCommand: pip install -r requirements-api.txt
     startCommand: gunicorn api.main:app --bind 0.0.0.0:$PORT --workers 1 --threads 2 --worker-class gthread --timeout 180 --max-requests 100 --max-requests-jitter 25
     envVars:
