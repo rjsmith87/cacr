@@ -3,11 +3,17 @@
 The cheapest/fastest Gemini model — true tier 1 small model.
 Uses GOOGLE_API_KEY for the direct Gemini API (not Vertex AI).
 Retries on transient 503 / 429 errors with exponential backoff.
+
+Per-request timeout: same CLOSE_WAIT-hang failure mode the Pro adapter
+hit during the v2 run. On Render, a hung Flash Lite call lets gunicorn
+SIGABRT the worker at --timeout, and the resulting Render-edge HTML 500
+has no CORS header — so the browser surfaces it as "Failed to fetch".
 """
 
 import os
 import time
 
+import httpx
 from google import genai
 from google.genai import errors as genai_errors
 
@@ -16,6 +22,7 @@ from models.gemini_adapter import _extract_retry_delay
 
 _MAX_RETRIES = 5
 _BASE_DELAY = 4.0
+_REQUEST_TIMEOUT_MS = 60_000  # 60s per attempt
 
 
 class GeminiFlashLite(Model):
@@ -40,6 +47,7 @@ class GeminiFlashLite(Model):
         self._config = genai.types.GenerateContentConfig(
             max_output_tokens=max_tokens,
             temperature=temperature,
+            http_options=genai.types.HttpOptions(timeout=_REQUEST_TIMEOUT_MS),
         )
 
     def generate(self, prompt: str) -> str:
@@ -61,4 +69,13 @@ class GeminiFlashLite(Model):
                     time.sleep(delay)
                     continue
                 raise
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                # Socket hang / server-closed-but-SDK-stuck / DNS / connect
+                # failures — all retryable from our side. Without this catch,
+                # a hung connection bypasses retry and the calling worker
+                # eventually gets SIGABRTed by gunicorn at --timeout.
+                last_exc = exc
+                delay = _BASE_DELAY * (2 ** attempt)
+                time.sleep(delay)
+                continue
         raise last_exc  # type: ignore[misc]

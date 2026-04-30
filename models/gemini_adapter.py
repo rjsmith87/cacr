@@ -2,12 +2,21 @@
 
 Uses GOOGLE_API_KEY for the direct Gemini API (not Vertex AI).
 Retries on transient 503 / 429 errors with exponential backoff.
+
+Per-request timeout: same CLOSE_WAIT-hang failure mode the Pro adapter
+hit during the v2 run can also strand Flash inside ssl.recv() — the
+server closes its side, the SDK never surfaces it as retryable, and
+the worker sits there until gunicorn SIGABRTs it. On Render that
+manifests as an HTML 500 from the edge with no CORS header, so the
+browser surfaces it as "Failed to fetch". We pin a 60s timeout via
+HttpOptions and treat httpx timeout/network exceptions as retryable.
 """
 
 import os
 import re
 import time
 
+import httpx
 from google import genai
 from google.genai import errors as genai_errors
 
@@ -16,6 +25,7 @@ from models.base import Model
 _MAX_RETRIES = 5
 _BASE_DELAY = 4.0  # seconds; doubles each attempt → 4, 8, 16, 32, 64
 _MIN_CALL_INTERVAL = 6.0  # Flash-specific rate-limit pacing (seconds)
+_REQUEST_TIMEOUT_MS = 60_000  # 60s per attempt
 
 
 def _extract_retry_delay(exc: Exception) -> float | None:
@@ -47,7 +57,11 @@ class GeminiFlash(Model):
         # Disable Gemini 2.5 reasoning tokens — they consume the output
         # budget before visible JSON completes, truncating structured
         # responses. CVE classification does not need chain-of-thought.
-        cfg_kwargs = {"max_output_tokens": max_tokens, "temperature": temperature}
+        cfg_kwargs = {
+            "max_output_tokens": max_tokens,
+            "temperature": temperature,
+            "http_options": genai.types.HttpOptions(timeout=_REQUEST_TIMEOUT_MS),
+        }
         try:
             cfg_kwargs["thinking_config"] = genai.types.ThinkingConfig(
                 thinking_budget=0
@@ -80,4 +94,13 @@ class GeminiFlash(Model):
                     time.sleep(delay)
                     continue
                 raise
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                # Socket hang / server-closed-but-SDK-stuck / DNS / connect
+                # failures — all retryable from our side. Without this catch,
+                # a hung connection bypasses retry and the calling worker
+                # eventually gets SIGABRTed by gunicorn at --timeout.
+                last_exc = exc
+                delay = _BASE_DELAY * (2 ** attempt)
+                time.sleep(delay)
+                continue
         raise last_exc  # type: ignore[misc]
