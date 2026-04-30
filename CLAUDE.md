@@ -220,10 +220,19 @@ scripts/
     for the n=30 sweep that falsified the 6/12 claim. The cve_study_calls
     BQ table is empty for any pre-2026-04-28 historical run — the original
     data wasn't preserved.
-22. **Render plan is currently `free`**, despite render.yaml saying
-    `plan: standard`. render.yaml plan changes don't auto-apply via git
-    push — they require an explicit Render Blueprint sync. This is the
-    pending blocker for /api/cascade-compare in production.
+22. **Render plan is `standard`** (upgraded 2026-04-30 from `free` via
+    the Render dashboard). render.yaml plan changes don't auto-apply via
+    git push — they require an explicit Blueprint sync, and the Render
+    API still rejects `PATCH /v1/services/{id}` with `serviceDetails.plan`
+    (HTTP 500), so the upgrade had to be a manual dashboard action. By
+    contrast, **`PATCH /v1/services/{id}` with
+    `serviceDetails.envSpecificDetails.startCommand` works** (HTTP 200,
+    change reflected, takes effect on next deploy) — that's how the
+    cacr-api startCommand was finally aligned with render.yaml after
+    the dashboard's stored value (`gunicorn api.main:app --workers 2`
+    with default sync worker and default 30s timeout) had been silently
+    overriding the render.yaml gthread / 180s config since the Blueprint
+    was first set up.
 
 ## Environment
 
@@ -368,6 +377,15 @@ working interactive demo. The remaining open items, roughly in priority:
   in the Render dashboard. PATCH `/v1/services/{id}` with `serviceDetails.plan`
   returns 500 — the API doesn't accept this either. Tell the user when
   a plan upgrade is needed.
+- **Other render.yaml fields can be patched via the API**, even when
+  Blueprint sync hasn't run. PATCH `/v1/services/{id}` with
+  `serviceDetails.envSpecificDetails.startCommand` (and presumably
+  `buildCommand`) returns HTTP 200 and takes effect on the next deploy.
+  Useful when the dashboard's stored value is silently overriding
+  render.yaml — verified 2026-04-30 when cacr-api's startCommand had
+  been stuck on the default `gunicorn api.main:app --workers 2` despite
+  render.yaml specifying gthread + 180s timeout. Plan stays the
+  exception: only `plan` returns 500.
 
 ## Audit history
 
@@ -431,3 +449,29 @@ ceiling. Discovered the actual current plan is `free` (not `starter` —
 wasn't triggered). Render API rejects plan PATCH with 500. Plan
 upgrade to Standard (2 GB) blocks on user dashboard action. All other
 endpoints unaffected and working.
+
+**2026-04-30 (afternoon)** — Cascade Demo end-to-end fix; tab now
+functional in production. Three cumulative root causes:
+(1) cacr-api was upgraded Free → Standard ($25/mo, 2 GB RAM) via the
+Render dashboard, resolving the OOM-kill on cascade-compare;
+(2) cacr-dashboard's bundle was falling back to the
+`http://localhost:8000` default because Render's `VITE_API_URL` env
+var alone wasn't being baked in at build time — fixed by committing
+`dashboard/.env.production` (`46cc2e9`) and triggering a clearCache
+deploy of `srv-d7cf147lk1mc7397nd70`, after which the bundle contains
+`https://cacr-api.onrender.com` as expected;
+(3) cacr-api's gunicorn was still running the dashboard-stored default
+`gunicorn api.main:app --workers 2` (sync worker, 30 s timeout)
+instead of render.yaml's gthread + 180 s — Blueprint sync had never
+run since the original setup. Workers were SIGABRTed at 30 s mid-
+`ssl.recv` from Gemini, returning a Render-edge HTML 500 with no CORS
+header, which the browser surfaced as "Network error: Failed to fetch."
+Patched `serviceDetails.envSpecificDetails.startCommand` via Render API
+(HTTP 200) to align with render.yaml, then redeployed. Also added
+`HttpOptions(timeout=60_000)` plus `httpx.TimeoutException` /
+`NetworkError` retry handling to GeminiFlash and GeminiFlashLite
+adapters (`ad81bf2`) to prevent the same CLOSE_WAIT hang the Pro
+adapter was already hardened against. Verified end-to-end: three
+sequential POST /api/cascade-compare returned 200 in 28-35 s with
+correct CORS header; logs confirm `Using worker: gthread` and
+`--timeout 180`.
