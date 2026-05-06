@@ -130,10 +130,30 @@ def _direct_step(
     """Run one step with a fixed model. Same dict shape as the
     CascadeResult-as-dict produced by _cascade_step, with escalation
     fields set to None and below_threshold=False — keeps the JSON
-    response shape identical regardless of strategy."""
+    response shape identical regardless of strategy.
+
+    Level 2: also surfaces logprob_confidence fields when the runner
+    returns them (model_runner contract gained logprob_mean /
+    logprob_min / output_token_count). For non-cacr strategies we
+    don't make escalation decisions, but we still emit the signal so
+    the dashboard's Confidence Accuracy tab can plot self-reported
+    vs logprob divergence on every step regardless of strategy.
+    """
+    from router.cascade_router import _logprob_to_probability
+
     r = model_runner(model_name, prompt)
     output = r.get("output", "") or ""
     confidence = parse_confidence(output)
+    logprob_conf = _logprob_to_probability(r.get("logprob_mean"))
+    # Pick the signal the dashboard should display as authoritative for
+    # this step. Same preference order as the cascade router so the UI
+    # legend is consistent across strategies.
+    if logprob_conf is not None:
+        signal = "logprob"
+    elif confidence is not None:
+        signal = "self_report"
+    else:
+        signal = "none"
     return {
         "initial_model": model_name,
         "initial_output": output,
@@ -153,6 +173,10 @@ def _direct_step(
         "warning": None,
         "initial_error": r.get("error"),
         "escalation_error": None,
+        "initial_logprob_confidence": logprob_conf,
+        "escalation_logprob_confidence": None,
+        "accepted_logprob_confidence": logprob_conf,
+        "confidence_signal": signal,
     }
 
 

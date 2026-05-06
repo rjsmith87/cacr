@@ -8,6 +8,13 @@ Per-request timeout: same CLOSE_WAIT-hang failure mode the Pro adapter
 hit during the v2 run. On Render, a hung Flash Lite call lets gunicorn
 SIGABRT the worker at --timeout, and the resulting Render-edge HTML 500
 has no CORS header — so the browser surfaces it as "Failed to fetch".
+
+Two surfaces:
+  - generate(prompt) -> str: vanilla call, no logprobs requested.
+  - generate_structured(prompt) -> GenerationResult: same call shape
+    plus response_logprobs=True / logprobs=N in the config so the
+    cascade router sees a real probability signal. Both surfaces
+    share the retry/backoff loop.
 """
 
 import os
@@ -17,12 +24,18 @@ import httpx
 from google import genai
 from google.genai import errors as genai_errors
 
-from models.base import Model
-from models.gemini_adapter import _extract_retry_delay
+from models.base import GenerationResult, Model
+from models.gemini_adapter import (
+    _aggregate_gemini_logprobs,
+    _extract_retry_delay,
+)
 
 _MAX_RETRIES = 5
 _BASE_DELAY = 4.0
 _REQUEST_TIMEOUT_MS = 60_000  # 60s per attempt
+# Number of alternative tokens to request per output token. See
+# gemini_adapter._TOP_LOGPROBS comment — same rationale.
+_TOP_LOGPROBS = 5
 
 
 class GeminiFlashLite(Model):
@@ -44,22 +57,39 @@ class GeminiFlashLite(Model):
             )
         self._client = genai.Client(api_key=key)
         self._model_id = model_id
-        self._config = genai.types.GenerateContentConfig(
-            max_output_tokens=max_tokens,
-            temperature=temperature,
-            http_options=genai.types.HttpOptions(timeout=_REQUEST_TIMEOUT_MS),
-        )
+        self._cfg_kwargs: dict = {
+            "max_output_tokens": max_tokens,
+            "temperature": temperature,
+            "http_options": genai.types.HttpOptions(timeout=_REQUEST_TIMEOUT_MS),
+        }
+        self._config = genai.types.GenerateContentConfig(**self._cfg_kwargs)
 
+    # ── Public surface ─────────────────────────────────────────────
     def generate(self, prompt: str) -> str:
+        response = self._call_with_retry(self._config, prompt)
+        return response.text.strip()
+
+    def generate_structured(self, prompt: str) -> GenerationResult:
+        structured_cfg = genai.types.GenerateContentConfig(
+            **self._cfg_kwargs,
+            response_logprobs=True,
+            logprobs=_TOP_LOGPROBS,
+        )
+        response = self._call_with_retry(structured_cfg, prompt)
+        text = response.text.strip()
+        return _aggregate_gemini_logprobs(response, text)
+
+    # ── Shared retry/backoff loop ──────────────────────────────────
+    def _call_with_retry(self, config, prompt: str):
         last_exc: Exception | None = None
         for attempt in range(_MAX_RETRIES):
             try:
                 response = self._client.models.generate_content(
                     model=self._model_id,
                     contents=prompt,
-                    config=self._config,
+                    config=config,
                 )
-                return response.text.strip()
+                return response
             except (genai_errors.ServerError, genai_errors.ClientError) as exc:
                 code = getattr(exc, "status_code", 0) or 0
                 if code in (429, 503):

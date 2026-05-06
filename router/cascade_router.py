@@ -2,10 +2,30 @@
 
 Layer 1 of cascade-aware routing: wraps the static LookupTableRouter
 with a per-step escalation rule that fires when the cheapest passing
-model returns a confidence below a configurable threshold. Maximum
-one escalation per step — the router will not loop chasing
-confidence forever; if even the escalated model is uncertain, it
-flags `below_threshold` and proceeds.
+model returns a low-confidence answer. Maximum one escalation per
+step — the router will not loop chasing confidence forever; if even
+the escalated model is uncertain, it flags `below_threshold` and
+proceeds.
+
+Two confidence signals run in parallel as of Level 2:
+
+  1. Self-reported confidence parsed from the model's text output
+     (the legacy "confidence: 1-10" line). Compared against
+     `escalation_threshold` (default 7.0). Available for every model.
+  2. Mean per-token log-probability lifted from the adapter's
+     structured generation call (OpenAI logprobs, Gemini
+     response_logprobs). Compared against `logprob_threshold`
+     (default 0.85, expressed in probability space). Available only
+     on adapters that override `generate_structured` — currently
+     GPT-4o-mini, Gemini Flash, Gemini Flash Lite. Anthropic, o3, and
+     legacy Vertex adapters return None and the router falls back to
+     signal #1.
+
+When both signals are available the router prefers the logprob path
+because the self-report digit is the very signal whose unreliability
+on cheap-tier models motivated Level 2 in the first place. Both
+values are recorded on CascadeResult for telemetry / divergence
+study on the Confidence Accuracy tab.
 
 The CascadeAwareRouter is intentionally pure logic: it does not
 construct adapters itself, it does not parse model output, and it
@@ -18,12 +38,23 @@ the existing models/ package on each call.
 
 from __future__ import annotations
 
+import math
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
 from router.cost_model import MODEL_COSTS
 from router.policy import LookupTableRouter, MIN_ACCEPTABLE_SCORE
+
+
+# Default mean per-token probability above which we accept the model's
+# answer without escalation. Placeholder pending calibration against the
+# benchmark battery — a real value comes from running the existing
+# benchmark suite, plotting logprob distribution by score, and picking
+# the threshold that maximizes correct-acceptance vs incorrect-
+# acceptance separation. See docs/level2_calibration.md (TBD).
+# TODO(level2-phase1): replace 0.85 with empirically calibrated value.
+DEFAULT_LOGPROB_THRESHOLD = 0.85
 
 
 @dataclass
@@ -34,6 +65,19 @@ class CascadeResult:
     so the caller can show the full trace, not just the accepted
     output. `accepted_*` fields are whichever pair (initial vs
     escalation) is being passed downstream.
+
+    Two parallel confidence channels:
+      - `*_confidence`: self-reported integer 1-10 parsed from the
+        model's free-text output via the caller-supplied
+        parse_confidence callable. Available for every model.
+      - `*_logprob_confidence`: mean per-token probability in (0,1]
+        derived from the adapter's structured generation call.
+        Available only on adapters that override generate_structured.
+
+    `confidence_signal` records which channel actually drove the
+    accept/escalate decision: "logprob" when logprob data was
+    available and used, "self_report" when we fell back to the
+    parsed integer, "none" when neither signal was present.
     """
 
     initial_model: str
@@ -60,6 +104,19 @@ class CascadeResult:
     # Errors propagated from the underlying model_runner, if any.
     initial_error: str | None = None
     escalation_error: str | None = None
+
+    # Level 2: parallel logprob-based confidence channel. None on adapters
+    # that don't expose token logprobs (Anthropic, o3, vertex). Each value
+    # is `exp(mean_logprob)` — i.e. the geometric-mean per-token probability
+    # in (0,1]. Higher = more confident.
+    initial_logprob_confidence: float | None = None
+    escalation_logprob_confidence: float | None = None
+    accepted_logprob_confidence: float | None = None
+
+    # Which channel drove the decision: "logprob" | "self_report" | "none".
+    # Useful for telemetry — lets us measure how often each signal fires
+    # and where the two disagree.
+    confidence_signal: str = "none"
 
 
 # Adapter location map: model name → (module path, class name). Used by
@@ -106,6 +163,12 @@ def _default_model_runner(model_name: str, prompt: str) -> dict:
     only the SDKs for the models actually used in the request get
     loaded — keeps memory footprint bounded on memory-constrained
     deploys.
+
+    Always calls `adapter.generate_structured` (not `generate`). For
+    adapters without a logprob override, `generate_structured` falls
+    back through the base-class default to `generate` and returns a
+    GenerationResult with logprob fields set to None — the router
+    treats that as "no logprob signal, fall back to self-report."
     """
     cls = _resolve_adapter_cls(model_name)
     if cls is None:
@@ -114,14 +177,24 @@ def _default_model_runner(model_name: str, prompt: str) -> dict:
             "latency_ms": 0.0,
             "cost_usd": 0.0,
             "error": f"no adapter registered for model {model_name!r}",
+            "logprob_mean": None,
+            "logprob_min": None,
+            "output_token_count": 0,
         }
 
     adapter = cls()
     t0 = time.perf_counter()
     output = ""
     error: str | None = None
+    logprob_mean: float | None = None
+    logprob_min: float | None = None
+    token_count = 0
     try:
-        output = adapter.generate(prompt)
+        result = adapter.generate_structured(prompt)
+        output = result.text
+        logprob_mean = result.logprob_mean
+        logprob_min = result.logprob_min
+        token_count = result.output_token_count
     except Exception as exc:  # noqa: BLE001
         error = f"{type(exc).__name__}: {exc}"
     latency_ms = (time.perf_counter() - t0) * 1000
@@ -136,7 +209,23 @@ def _default_model_runner(model_name: str, prompt: str) -> dict:
         "latency_ms": latency_ms,
         "cost_usd": cost_usd,
         "error": error,
+        "logprob_mean": logprob_mean,
+        "logprob_min": logprob_min,
+        "output_token_count": token_count,
     }
+
+
+def _logprob_to_probability(logprob_mean: float | None) -> float | None:
+    """Convert a mean log-probability to a mean probability in (0,1].
+    Returns None passthrough so callers can use a single None check
+    to detect "no signal."
+    """
+    if logprob_mean is None:
+        return None
+    # Clamp at 0.0 to be safe against any pathological input — exp(very
+    # negative) underflows to 0.0 already, but a floor here makes the
+    # contract explicit.
+    return max(0.0, min(1.0, math.exp(logprob_mean)))
 
 
 # ── Router ───────────────────────────────────────────────────────────
@@ -146,9 +235,11 @@ class CascadeAwareRouter:
     Per `run_step`:
       1. LookupTableRouter picks the cheapest model meeting
          MIN_ACCEPTABLE_SCORE for the task.
-      2. The model runs; the caller's parse_confidence reads the
-         confidence from the output.
-      3. If confidence >= escalation_threshold → accept, return.
+      2. The model runs; both signals are captured if available
+         (logprob from the adapter, self-report from the text).
+      3. If the preferred signal clears its threshold → accept, return.
+         Logprob is preferred when present; fall back to self-report
+         otherwise.
       4. Otherwise pick the next-cheapest model with mean_score
          >= MIN_ACCEPTABLE_SCORE AND cost > initial cost.
       5. If no escalation candidate exists → accept initial,
@@ -165,6 +256,7 @@ class CascadeAwareRouter:
         lookup_router: LookupTableRouter | None = None,
         model_runner: Callable[[str, str], dict] | None = None,
         escalation_threshold: float = 7.0,
+        logprob_threshold: float = DEFAULT_LOGPROB_THRESHOLD,
     ):
         self._lookup = (
             lookup_router if lookup_router is not None else LookupTableRouter()
@@ -173,6 +265,7 @@ class CascadeAwareRouter:
             model_runner if model_runner is not None else _default_model_runner
         )
         self._threshold = float(escalation_threshold)
+        self._logprob_threshold = float(logprob_threshold)
 
     # ── Public ──────────────────────────────────────────────────────
     def run_step(
@@ -192,11 +285,12 @@ class CascadeAwareRouter:
         initial_cost = float(r1.get("cost_usd", 0.0))
         initial_error = r1.get("error")
         initial_confidence = parse_confidence(initial_output)
+        initial_logprob_conf = _logprob_to_probability(r1.get("logprob_mean"))
 
-        # 3. Decide whether to escalate.
-        confident_enough = (
-            initial_confidence is not None
-            and initial_confidence >= self._threshold
+        # 3. Decide whether to escalate. Logprob signal is preferred when
+        #    present; falls back to self-report when None.
+        confident_enough, signal = self._is_confident_enough(
+            initial_logprob_conf, initial_confidence
         )
         if confident_enough:
             return CascadeResult(
@@ -212,16 +306,20 @@ class CascadeAwareRouter:
                 below_threshold=False,
                 warning=None,
                 initial_error=initial_error,
+                initial_logprob_confidence=initial_logprob_conf,
+                accepted_logprob_confidence=initial_logprob_conf,
+                confidence_signal=signal,
             )
 
         # 4. Pick escalation candidate.
         escalation_model = self._pick_escalation_model(task, initial_model)
         if escalation_model is None:
             warning = (
-                f"Confidence {initial_confidence!s} on {initial_model} is below "
-                f"threshold {self._threshold:.0f}, but no higher-tier model with "
-                f"mean_score >= {MIN_ACCEPTABLE_SCORE} is available for {task}. "
-                f"Consider human review."
+                f"Confidence below threshold on {initial_model} "
+                f"(self_report={initial_confidence!s}, "
+                f"logprob={initial_logprob_conf!s}); no higher-tier model "
+                f"with mean_score >= {MIN_ACCEPTABLE_SCORE} available for "
+                f"{task}. Consider human review."
             )
             return CascadeResult(
                 initial_model=initial_model,
@@ -236,6 +334,9 @@ class CascadeAwareRouter:
                 below_threshold=True,
                 warning=warning,
                 initial_error=initial_error,
+                initial_logprob_confidence=initial_logprob_conf,
+                accepted_logprob_confidence=initial_logprob_conf,
+                confidence_signal=signal,
             )
 
         # 5. Run escalation. Maximum one — never recurse.
@@ -245,18 +346,23 @@ class CascadeAwareRouter:
         escalation_cost = float(r2.get("cost_usd", 0.0))
         escalation_error = r2.get("error")
         escalation_confidence = parse_confidence(escalation_output)
+        escalation_logprob_conf = _logprob_to_probability(r2.get("logprob_mean"))
 
-        below_threshold = (
-            escalation_confidence is None
-            or escalation_confidence < self._threshold
+        # 6. Did the escalation clear the bar? Same preference order:
+        #    logprob if available, else self-report. Used only to set
+        #    the below_threshold flag — the escalated output is accepted
+        #    regardless (max-one-escalation hard cap).
+        esc_confident, esc_signal = self._is_confident_enough(
+            escalation_logprob_conf, escalation_confidence
         )
+        below_threshold = not esc_confident
         warning = None
         if below_threshold:
             warning = (
-                f"Escalated to {escalation_model} but confidence "
-                f"{escalation_confidence!s} is still below threshold "
-                f"{self._threshold:.0f}. Maximum one escalation per step; "
-                f"consider human review."
+                f"Escalated to {escalation_model} but confidence still below "
+                f"threshold (self_report={escalation_confidence!s}, "
+                f"logprob={escalation_logprob_conf!s}). Maximum one "
+                f"escalation per step; consider human review."
             )
 
         return CascadeResult(
@@ -278,9 +384,35 @@ class CascadeAwareRouter:
             warning=warning,
             initial_error=initial_error,
             escalation_error=escalation_error,
+            initial_logprob_confidence=initial_logprob_conf,
+            escalation_logprob_confidence=escalation_logprob_conf,
+            accepted_logprob_confidence=escalation_logprob_conf,
+            # The escalation decision was driven by the initial step's
+            # signal; report that one. The escalation's own signal is
+            # captured separately on escalation_logprob_confidence.
+            confidence_signal=signal,
         )
 
     # ── Internal ────────────────────────────────────────────────────
+    def _is_confident_enough(
+        self,
+        logprob_conf: float | None,
+        self_report: int | None,
+    ) -> tuple[bool, str]:
+        """Apply the preference policy: logprob signal wins when present.
+
+        Returns (confident_enough, signal_used) where signal_used is one
+        of "logprob" / "self_report" / "none". The "none" branch (both
+        signals missing) treats the answer as below threshold so the
+        router escalates — matches the v1 behavior of `confidence is None
+        → escalate`.
+        """
+        if logprob_conf is not None:
+            return logprob_conf >= self._logprob_threshold, "logprob"
+        if self_report is not None:
+            return self_report >= self._threshold, "self_report"
+        return False, "none"
+
     def _pick_escalation_model(
         self, task: str, initial_model: str
     ) -> str | None:
