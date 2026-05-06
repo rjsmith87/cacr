@@ -48,6 +48,21 @@ def _extract_retry_delay(exc: Exception) -> float | None:
     return float(m.group(1)) if m else None
 
 
+def _is_logprob_unsupported_error(exc: Exception) -> bool:
+    """True when the Gemini API returned a 400 INVALID_ARGUMENT specifically
+    rejecting response_logprobs (observed on the 2.5 series via the direct
+    API). Used by both Gemini adapters to fall through to a no-signal
+    GenerationResult when logprobs aren't available — same path Anthropic
+    and o3 take by inheriting the base-class default.
+
+    Match is on the textual message because google-genai's ClientError
+    doesn't expose a structured error code beyond status_code=400.
+    """
+    if getattr(exc, "status_code", 0) != 400:
+        return False
+    return "Logprobs is not enabled" in str(exc)
+
+
 class GeminiFlash(Model):
     name = "gemini-2.5-flash"
     tier = 1
@@ -98,7 +113,20 @@ class GeminiFlash(Model):
             response_logprobs=True,
             logprobs=_TOP_LOGPROBS,
         )
-        response = self._call_with_retry(structured_cfg, prompt)
+        try:
+            response = self._call_with_retry(structured_cfg, prompt)
+        except genai_errors.ClientError as exc:
+            # Gemini 2.5 series rejects response_logprobs=True at the API
+            # level with a 400 "Logprobs is not enabled for models/..."
+            # — observed live on flash and flash-lite during the Phase 1
+            # rollout. Falling back to plain generate() preserves the
+            # "no-logprob path" behavior the router already handles
+            # gracefully (Anthropic / o3 / vertex take the same fallback).
+            # Surfaces as a GenerationResult with logprob fields None.
+            if _is_logprob_unsupported_error(exc):
+                text = self.generate(prompt)
+                return GenerationResult(text=text)
+            raise
         text = response.text.strip()
         return _aggregate_gemini_logprobs(response, text)
 

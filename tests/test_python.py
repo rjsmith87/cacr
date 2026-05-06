@@ -489,6 +489,117 @@ def test_gemini_flash_lite_uses_same_aggregator(monkeypatch):
     assert result.output_token_count == 2
 
 
+def test_gemini_flash_falls_back_when_api_rejects_logprobs(monkeypatch):
+    """Production regression: the Gemini 2.5 series rejects
+    response_logprobs=True with a 400 INVALID_ARGUMENT 'Logprobs is
+    not enabled for models/...'. The adapter must catch that specific
+    error and fall back to plain generate() rather than propagating
+    the failure (which would empty the cascade step and force the
+    router to escalate every Gemini call). Same defensive degradation
+    as the Anthropic / o3 / vertex no-logprob path."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    from models.gemini_adapter import GeminiFlash
+    from google.genai import errors as genai_errors
+
+    adapter = GeminiFlash()
+
+    fake_400 = genai_errors.ClientError.__new__(genai_errors.ClientError)
+    fake_400.status_code = 400
+    fake_400.args = (
+        "400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': "
+        "'Logprobs is not enabled for models/gemini-2.5-flash', "
+        "'status': 'INVALID_ARGUMENT'}}",
+    )
+
+    structured_call_count = 0
+    plain_call_count = 0
+
+    def fake_generate_content(model, contents, config):
+        nonlocal structured_call_count, plain_call_count
+        # Inspect the config to tell which surface we're being called from.
+        if getattr(config, "response_logprobs", False):
+            structured_call_count += 1
+            raise fake_400
+        plain_call_count += 1
+        return _ns(text="severity: high\nconfidence: 7", candidates=[])
+
+    class _FakeClient:
+        def __init__(self):
+            self.models = _ns(generate_content=fake_generate_content)
+
+    adapter._client = _FakeClient()
+    result = adapter.generate_structured("p")
+
+    # Structured call was attempted and rejected; plain call was used.
+    assert structured_call_count == 1
+    assert plain_call_count == 1
+    # Result has text but no logprob signal — router falls through.
+    assert result.text == "severity: high\nconfidence: 7"
+    assert result.logprob_mean is None
+    assert result.logprob_min is None
+    assert result.output_token_count == 0
+
+
+def test_gemini_flash_lite_falls_back_when_api_rejects_logprobs(monkeypatch):
+    """Mirror of the Flash regression test for Flash Lite — same 400
+    is what the live API returned during the Phase 1 deploy probe."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    from models.gemini_flash_lite_adapter import GeminiFlashLite
+    from google.genai import errors as genai_errors
+
+    adapter = GeminiFlashLite()
+
+    fake_400 = genai_errors.ClientError.__new__(genai_errors.ClientError)
+    fake_400.status_code = 400
+    fake_400.args = (
+        "400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': "
+        "'Logprobs is not enabled for models/gemini-2.5-flash-lite', "
+        "'status': 'INVALID_ARGUMENT'}}",
+    )
+
+    def fake_generate_content(model, contents, config):
+        if getattr(config, "response_logprobs", False):
+            raise fake_400
+        return _ns(text="vulnerable: no\nconfidence: 9", candidates=[])
+
+    class _FakeClient:
+        def __init__(self):
+            self.models = _ns(generate_content=fake_generate_content)
+
+    adapter._client = _FakeClient()
+    result = adapter.generate_structured("p")
+
+    assert result.text == "vulnerable: no\nconfidence: 9"
+    assert result.logprob_mean is None
+    assert result.output_token_count == 0
+
+
+def test_gemini_flash_propagates_non_logprob_400(monkeypatch):
+    """Other 400s (auth issue, malformed prompt, etc.) MUST still
+    propagate — the fallback is narrowly scoped to the 'Logprobs is
+    not enabled' message so we don't paper over real failures."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    from models.gemini_adapter import GeminiFlash
+    from google.genai import errors as genai_errors
+
+    adapter = GeminiFlash()
+
+    other_400 = genai_errors.ClientError.__new__(genai_errors.ClientError)
+    other_400.status_code = 400
+    other_400.args = ("400 INVALID_ARGUMENT. malformed prompt",)
+
+    def fake_generate_content(model, contents, config):
+        raise other_400
+
+    class _FakeClient:
+        def __init__(self):
+            self.models = _ns(generate_content=fake_generate_content)
+
+    adapter._client = _FakeClient()
+    with pytest.raises(genai_errors.ClientError):
+        adapter.generate_structured("p")
+
+
 def test_default_generate_structured_is_no_signal():
     """An adapter that doesn't override generate_structured (Anthropic,
     o3, vertex) should inherit the base no-signal path — the router

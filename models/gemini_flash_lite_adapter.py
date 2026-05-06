@@ -28,6 +28,7 @@ from models.base import GenerationResult, Model
 from models.gemini_adapter import (
     _aggregate_gemini_logprobs,
     _extract_retry_delay,
+    _is_logprob_unsupported_error,
 )
 
 _MAX_RETRIES = 5
@@ -75,7 +76,19 @@ class GeminiFlashLite(Model):
             response_logprobs=True,
             logprobs=_TOP_LOGPROBS,
         )
-        response = self._call_with_retry(structured_cfg, prompt)
+        try:
+            response = self._call_with_retry(structured_cfg, prompt)
+        except genai_errors.ClientError as exc:
+            # Gemini 2.5 series rejects response_logprobs=True at the API
+            # level with a 400 "Logprobs is not enabled for models/..."
+            # — see gemini_adapter._is_logprob_unsupported_error for the
+            # match. Fall back to plain generate() so the cascade router
+            # treats this step the same way it treats Anthropic / o3 /
+            # vertex (no logprob signal → use self-report).
+            if _is_logprob_unsupported_error(exc):
+                text = self.generate(prompt)
+                return GenerationResult(text=text)
+            raise
         text = response.text.strip()
         return _aggregate_gemini_logprobs(response, text)
 
