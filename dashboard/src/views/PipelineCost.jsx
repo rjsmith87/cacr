@@ -8,10 +8,20 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 // failing pipeline is just being wrong cheaply, and the dashboard should
 // say so out loud.
 const PIPELINE_MIN_ACCEPTABLE_ACCURACY = 0.70
+// Anchor for the human-readable cost projection. Same scale every cost
+// number on the dashboard uses so the relative comparisons are honest.
+const DAILY_VOLUME = 30000
 
 function formatCost(val) {
   if (val == null) return '—'
   return `$${Number(val).toFixed(4)}`
+}
+
+function formatCostDaily(val) {
+  if (val == null) return '—'
+  const daily = Number(val) * DAILY_VOLUME
+  if (daily < 100) return `≈ $${daily.toFixed(2)}/day at ${(DAILY_VOLUME / 1000).toFixed(0)}k queries`
+  return `≈ $${daily.toFixed(0)}/day at ${(DAILY_VOLUME / 1000).toFixed(0)}k queries`
 }
 
 function formatLatency(val) {
@@ -29,10 +39,10 @@ function formatPct(val) {
 // mistake forces the pipeline to retry downstream — and a value above
 // 50% means the pipeline is broken more often than it's working.
 function cascadeFailColor(rate) {
-  if (rate == null) return 'text-gray-500'
-  if (rate >= 0.5) return 'text-red-400'
-  if (rate >= 0.3) return 'text-yellow-400'
-  return 'text-emerald-400'
+  if (rate == null) return 'text-slate-500'
+  if (rate >= 0.5) return 'text-red-700'
+  if (rate >= 0.3) return 'text-amber-700'
+  return 'text-emerald-700'
 }
 
 const STRATEGY_META = {
@@ -44,10 +54,10 @@ const STRATEGY_META = {
 
 function accentClasses(accent) {
   const map = {
-    amber: { border: 'border-amber-500/30', bg: 'bg-amber-500/10', text: 'text-amber-400', badge: 'bg-amber-500' },
-    emerald: { border: 'border-emerald-500/30', bg: 'bg-emerald-500/10', text: 'text-emerald-400', badge: 'bg-emerald-500' },
-    sky: { border: 'border-sky-500/30', bg: 'bg-sky-500/10', text: 'text-sky-400', badge: 'bg-sky-500' },
-    indigo: { border: 'border-indigo-500/30', bg: 'bg-indigo-500/10', text: 'text-indigo-400', badge: 'bg-indigo-500' },
+    amber:   { border: 'border-amber-200',   bg: 'bg-amber-50',   text: 'text-amber-700',   badge: 'bg-amber-500' },
+    emerald: { border: 'border-emerald-200', bg: 'bg-emerald-50', text: 'text-emerald-700', badge: 'bg-emerald-500' },
+    sky:     { border: 'border-sky-200',     bg: 'bg-sky-50',     text: 'text-sky-700',     badge: 'bg-sky-500' },
+    indigo:  { border: 'border-indigo-200',  bg: 'bg-indigo-50',  text: 'text-indigo-700',  badge: 'bg-indigo-500' },
   }
   return map[accent] || map.indigo
 }
@@ -106,19 +116,12 @@ export default function PipelineCost() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-white">Pipeline Cost Comparison</h2>
-        <p className="text-gray-400 mt-1">
-          Same accuracy, radically different cost. CACR matches Haiku's performance at {costMultiple ? `${costMultiple}x` : '~22x'} lower cost per request.
-        </p>
-      </div>
-
       {/* Below-threshold banner — sits above the strategy grid so the
           cost narrative below is read in the right context. */}
       {anyBelowThreshold && (
-        <div className="bg-amber-950/40 border border-amber-700/50 rounded-lg px-4 py-3 text-amber-300 text-sm mb-6">
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-amber-900 text-sm mb-6 shadow-sm">
           <div className="font-semibold mb-1">⚠ All strategies below end-to-end accuracy threshold</div>
-          <div className="text-amber-200/90">
+          <div className="text-amber-800">
             All evaluated strategies score below {PIPELINE_MIN_ACCEPTABLE_ACCURACY.toFixed(2)} end-to-end accuracy
             on this pipeline. The cheapest option is not the best option — it's the least-expensive way to be wrong.
           </div>
@@ -133,20 +136,21 @@ export default function PipelineCost() {
           const ac = accentClasses(meta.accent)
           const isCheapest = strategy.cost != null && strategy.cost === bestCost
           return (
-            <div key={key} className={`bg-gray-900 border ${ac.border} rounded-xl p-6 flex flex-col`}>
+            <div key={key} className={`bg-white border ${ac.border} rounded-xl p-6 flex flex-col shadow-sm hover:shadow-md transition-shadow`}>
               <div className="flex items-center gap-2 mb-1">
                 <div className={`w-2 h-2 rounded-full ${ac.badge}`} />
-                <h3 className="text-lg font-semibold text-white">{meta.label}</h3>
+                <h3 className="text-lg font-semibold text-slate-900">{meta.label}</h3>
               </div>
-              <p className="text-xs text-gray-500 mb-4">{meta.desc}</p>
+              <p className="text-xs text-slate-500 mb-4">{meta.desc}</p>
 
               {/* Cost — hero metric */}
               <div className="mb-3">
-                <span className="text-xs uppercase tracking-wider text-gray-500">Cost per pipeline run</span>
-                <div className={`text-2xl font-mono font-bold mt-1 ${isCheapest ? 'text-emerald-400' : 'text-gray-200'}`}>
+                <span className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Cost per pipeline run</span>
+                <div className={`text-3xl font-mono font-bold mt-1 ${isCheapest ? 'text-emerald-700' : 'text-slate-900'}`}>
                   {formatCost(strategy.cost)}
-                  {isCheapest && <span className="ml-2 text-xs text-emerald-500 uppercase tracking-wider font-semibold">lowest</span>}
+                  {isCheapest && <span className="ml-2 text-xs text-emerald-600 uppercase tracking-wider font-semibold">lowest</span>}
                 </div>
+                <div className="text-[11px] text-slate-500 mt-0.5">{formatCostDaily(strategy.cost)}</div>
               </div>
 
               {/* Cascade fail rate — project-thesis metric, surfaced
@@ -154,23 +158,23 @@ export default function PipelineCost() {
                   bottom of the page. Color tracks severity:
                   red ≥50%, yellow 30-50%, green <30%. */}
               <div className="mb-4">
-                <span className="text-xs uppercase tracking-wider text-gray-500">Cascade fail rate</span>
+                <span className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Cascade fail rate</span>
                 <div className={`text-xl font-mono font-bold mt-1 ${cascadeFailColor(strategy.cascade_failure_rate)}`}>
                   {formatPct(strategy.cascade_failure_rate)}
                 </div>
               </div>
 
               {/* Secondary metrics — de-emphasized */}
-              <div className="space-y-2 text-xs text-gray-500">
+              <div className="space-y-2 text-xs text-slate-500 pt-3 border-t border-slate-100">
                 <div className="flex justify-between">
                   <span>Latency</span>
-                  <span className={`font-mono ${strategy.latency === bestLatency ? 'text-gray-300' : 'text-gray-500'}`}>
+                  <span className={`font-mono ${strategy.latency === bestLatency ? 'text-slate-700' : 'text-slate-500'}`}>
                     {formatLatency(strategy.latency)}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>End-to-end accuracy</span>
-                  <span className="font-mono text-gray-500">{formatPct(strategy.accuracy)}</span>
+                  <span className="font-mono text-slate-500">{formatPct(strategy.accuracy)}</span>
                 </div>
               </div>
             </div>
@@ -179,33 +183,33 @@ export default function PipelineCost() {
       </div>
 
       {/* Callout banner */}
-      <div className="bg-indigo-950/40 border border-indigo-500/20 rounded-xl px-6 py-4 mb-8">
-        <p className="text-sm text-indigo-300 leading-relaxed">
+      <div className="bg-gradient-to-br from-teal-50 via-white to-indigo-50 border border-teal-200 rounded-xl px-6 py-4 mb-8 shadow-sm">
+        <p className="text-sm text-slate-700 leading-relaxed">
           All three strategies achieve comparable accuracy on this pipeline.
           The difference is cost — CACR and Flash Lite run at{' '}
-          <span className="font-mono font-semibold text-indigo-200">{formatCost(liteCost)}</span> per
+          <span className="font-mono font-semibold text-teal-700">{formatCost(liteCost)}</span> per
           request vs{' '}
-          <span className="font-mono font-semibold text-indigo-200">{formatCost(haikuCost)}</span> for
+          <span className="font-mono font-semibold text-slate-900">{formatCost(haikuCost)}</span> for
           All Haiku.
           {costMultiple && (
-            <span className="font-semibold text-indigo-200"> That's {costMultiple}x cheaper for the same result.</span>
+            <span className="font-semibold text-slate-900"> That's {costMultiple}x cheaper for the same result.</span>
           )}
         </p>
       </div>
 
       {/* Detailed comparison table */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-800">
-              <th className="text-left px-4 py-3 text-gray-400 font-medium">Strategy</th>
-              <th className="text-right px-4 py-3 text-gray-400 font-medium">Cost</th>
-              <th className="text-right px-4 py-3 text-gray-400 font-medium">Latency</th>
-              <th className="text-right px-4 py-3 text-gray-400 font-medium">Severity</th>
-              <th className="text-right px-4 py-3 text-gray-400 font-medium">Bug Type</th>
-              <th className="text-right px-4 py-3 text-gray-400 font-medium">CVE Detect</th>
-              <th className="text-right px-4 py-3 text-gray-400 font-medium">Fix</th>
-              <th className="text-right px-4 py-3 text-gray-400 font-medium">Cascade Fail</th>
+            <tr className="border-b border-slate-200 bg-slate-50">
+              <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Strategy</th>
+              <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Cost</th>
+              <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Latency</th>
+              <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Severity</th>
+              <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Bug Type</th>
+              <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">CVE Detect</th>
+              <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Fix</th>
+              <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Cascade Fail</th>
             </tr>
           </thead>
           <tbody>
@@ -213,19 +217,19 @@ export default function PipelineCost() {
               const key = strategy.name || strategy.strategy || 'unknown'
               const meta = STRATEGY_META[key] || { label: key, accent: 'indigo' }
               return (
-                <tr key={key} className="border-b border-gray-800/50 last:border-0">
-                  <td className="px-4 py-3 text-gray-200 font-medium">{meta.label}</td>
-                  <td className={`px-4 py-3 text-right font-mono font-semibold ${strategy.cost === bestCost ? 'text-emerald-400' : 'text-gray-300'}`}>
+                <tr key={key} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                  <td className="px-4 py-3 text-slate-800 font-medium">{meta.label}</td>
+                  <td className={`px-4 py-3 text-right font-mono font-semibold ${strategy.cost === bestCost ? 'text-emerald-700' : 'text-slate-700'}`}>
                     {formatCost(strategy.cost)}
                   </td>
-                  <td className={`px-4 py-3 text-right font-mono ${strategy.latency === bestLatency ? 'text-emerald-400' : 'text-gray-400'}`}>
+                  <td className={`px-4 py-3 text-right font-mono ${strategy.latency === bestLatency ? 'text-emerald-700' : 'text-slate-600'}`}>
                     {formatLatency(strategy.latency)}
                   </td>
-                  <td className="px-4 py-3 text-right font-mono text-gray-500">{formatPct(strategy.step1_accuracy)}</td>
-                  <td className="px-4 py-3 text-right font-mono text-gray-500">{formatPct(strategy.step2_accuracy)}</td>
-                  <td className="px-4 py-3 text-right font-mono text-gray-500">{formatPct(strategy.step3_accuracy)}</td>
-                  <td className="px-4 py-3 text-right font-mono text-gray-500">{formatPct(strategy.step4_accuracy)}</td>
-                  <td className="px-4 py-3 text-right font-mono text-gray-500">{formatPct(strategy.cascade_failure_rate)}</td>
+                  <td className="px-4 py-3 text-right font-mono text-slate-500">{formatPct(strategy.step1_accuracy)}</td>
+                  <td className="px-4 py-3 text-right font-mono text-slate-500">{formatPct(strategy.step2_accuracy)}</td>
+                  <td className="px-4 py-3 text-right font-mono text-slate-500">{formatPct(strategy.step3_accuracy)}</td>
+                  <td className="px-4 py-3 text-right font-mono text-slate-500">{formatPct(strategy.step4_accuracy)}</td>
+                  <td className="px-4 py-3 text-right font-mono text-slate-500">{formatPct(strategy.cascade_failure_rate)}</td>
                 </tr>
               )
             })}
@@ -260,7 +264,13 @@ export default function PipelineCost() {
 function LoadingState() {
   return (
     <div className="flex items-center justify-center h-64">
-      <div className="animate-pulse text-gray-500 text-sm">Loading pipeline cost data...</div>
+      <div className="text-center max-w-sm px-6">
+        <div className="animate-pulse text-slate-700 text-sm font-medium">Loading the strategy comparison…</div>
+        <div className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+          Aggregating four routing strategies (All Haiku, All Flash Lite, All GPT-4o-mini, CACR-routed) over
+          the same 4-step security pipeline.
+        </div>
+      </div>
     </div>
   )
 }
@@ -268,7 +278,7 @@ function LoadingState() {
 function ErrorState({ message }) {
   return (
     <div className="flex items-center justify-center h-64">
-      <div className="bg-red-950/50 border border-red-800 rounded-lg px-6 py-4 text-red-400 text-sm">
+      <div className="bg-red-50 border border-red-200 rounded-lg px-6 py-4 text-red-700 text-sm">
         Failed to load data: {message}
       </div>
     </div>
@@ -278,9 +288,9 @@ function ErrorState({ message }) {
 function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center h-64 gap-3">
-      <div className="text-4xl text-gray-700">&#x2699;</div>
-      <p className="text-gray-400 text-sm">Run pipeline simulation first</p>
-      <p className="text-gray-600 text-xs">No strategy comparison data available yet.</p>
+      <div className="text-4xl text-slate-300">&#x2699;</div>
+      <p className="text-slate-700 text-sm">Run pipeline simulation first</p>
+      <p className="text-slate-500 text-xs">No strategy comparison data available yet.</p>
     </div>
   )
 }

@@ -2,32 +2,51 @@ import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import CapabilityMatrix from './views/CapabilityMatrix'
 import CalibrationExplorer from './views/CalibrationExplorer'
 import CascadeDemo from './views/CascadeDemo'
-import PipelineCost from './views/PipelineCost'
 import RouterPlayground from './views/RouterPlayground'
-import ModelEfficiency from './views/ModelEfficiency'
 import CostModel from './views/CostModel'
 
 const navItems = [
-  { to: '/', label: 'Cascade Demo', accent: true },
-  { to: '/capability', label: 'Capability Matrix' },
-  { to: '/calibration', label: 'Calibration Explorer' },
-  { to: '/cost-model', label: 'Cost Model' },
-  { to: '/pipeline', label: 'Pipeline Cost' },
-  { to: '/router', label: 'Router Playground' },
-  { to: '/efficiency', label: 'Model Efficiency' },
+  { to: '/', label: 'Live Demo', accent: true },
+  { to: '/capability', label: 'Which Model Wins What' },
+  { to: '/calibration', label: 'Confidence Accuracy' },
+  { to: '/router', label: 'Try the Router' },
+  { to: '/cost-model', label: 'Cost Calculator' },
 ]
 
 function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen flex flex-col">
-        <header className="border-b border-gray-800 bg-gray-950/80 backdrop-blur-sm sticky top-0 z-50">
+      <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
+        {/* Always-on framing banner — answers "what is this?" before the user
+            has to click anything. Sits above the header so it stays visible
+            even when the tab bar is sticky-pinned. */}
+        <div className="sticky top-0 z-[60] bg-slate-900 text-slate-100 text-xs sm:text-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex items-center justify-center gap-2 text-center leading-snug">
+            <span className="hidden sm:inline-flex h-1.5 w-1.5 rounded-full bg-teal-400 shrink-0" aria-hidden="true" />
+            <span>
+              <span className="font-semibold text-white">CACR routes AI tasks to the cheapest model that can handle them</span>
+              <span className="hidden sm:inline text-slate-400"> — empirically validated across 4 models, 3 task types, 30 trials each.</span>
+            </span>
+          </div>
+        </div>
+        <header className="border-b border-slate-200 bg-white/90 backdrop-blur-md sticky top-[40px] sm:top-[36px] z-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
               <div className="flex items-center gap-3 shrink-0">
-                <h1 className="text-xl font-bold text-white tracking-tight">CACR</h1>
-                <span className="hidden sm:inline text-sm text-gray-500 border-l border-gray-700 pl-3">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-teal-600 text-white text-xs font-bold tracking-tight shadow-sm">
+                    C
+                  </span>
+                  <h1 className="text-lg font-bold text-slate-900 tracking-tight">CACR</h1>
+                </div>
+                <span className="hidden sm:inline text-sm text-slate-500 border-l border-slate-200 pl-3">
                   Cascade-Aware Confidence Routing
+                </span>
+              </div>
+              <div className="hidden md:flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Research framework
                 </span>
               </div>
             </div>
@@ -40,14 +59,14 @@ function App() {
                   className={({ isActive }) =>
                     `whitespace-nowrap px-3 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
                       isActive
-                        ? 'border-indigo-500 text-indigo-400'
+                        ? 'border-teal-600 text-teal-700 font-semibold'
                         : accent
-                          ? 'border-transparent text-indigo-300 hover:text-indigo-200 hover:border-indigo-700'
-                          : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                          ? 'border-transparent text-indigo-600 hover:text-indigo-700 hover:border-indigo-200'
+                          : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
                     }`
                   }
                 >
-                  {accent && <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-400" aria-hidden="true" />}
+                  {accent && <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500" aria-hidden="true" />}
                   {label}
                 </NavLink>
               ))}
@@ -60,14 +79,12 @@ function App() {
             <Route path="/" element={<CascadeDemo />} />
             <Route path="/capability" element={<CapabilityMatrix />} />
             <Route path="/calibration" element={<CalibrationExplorer />} />
-            <Route path="/cost-model" element={<CostModel />} />
-            <Route path="/pipeline" element={<PipelineCost />} />
             <Route path="/router" element={<RouterPlayground />} />
-            <Route path="/efficiency" element={<ModelEfficiency />} />
+            <Route path="/cost-model" element={<CostModel />} />
           </Routes>
         </main>
 
-        <footer className="border-t border-gray-800 py-4 text-center text-xs text-gray-600">
+        <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500">
           CACR Dashboard — Cascade-Aware Confidence Routing
         </footer>
       </div>

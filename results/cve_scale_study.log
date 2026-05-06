@@ -1,0 +1,47 @@
+Scale study: 12 CVEs × 30 attempts = 360 calls
+Pacing: 1.5s between requests, 5 retries on 429/503/timeout
+Output: /Users/robertsmith/Desktop/slm-router/results/cve_scale_study.jsonl
+BQ:     project-92dd6ac6-23b0-47de-bb6:cacr_results.cve_scale_study
+
+  [ 30/360, 0.7min] CVE-2023-30861     attempt 30/30 latency=498ms
+  [ 60/360, 1.6min] CVE-2023-32681     attempt 30/30 latency=504ms
+  [ 90/360, 2.3min] CVE-2018-18074     attempt 30/30 latency=472ms
+  [120/360, 3.1min] CVE-2019-11324     attempt 30/30 latency=570ms
+  [150/360, 3.8min] CVE-2022-29217     attempt 30/30 latency=483ms
+  [180/360, 4.6min] CVE-2021-33503     attempt 30/30 latency=420ms
+  [210/360, 5.3min] CVE-2020-28493     attempt 30/30 latency=595ms
+  [240/360, 6.1min] CVE-2021-28363     attempt 30/30 latency=542ms
+  [270/360, 6.8min] CVE-2022-23491     attempt 30/30 latency=510ms
+  [300/360, 7.6min] CVE-2023-25577     attempt 30/30 latency=683ms
+  [330/360, 8.3min] CVE-2020-26137     attempt 30/30 latency=684ms
+  [360/360, 9.1min] CVE-2019-20477     attempt 30/30 latency=614ms
+
+Finished in 9.1 min (546s)
+  rows in JSONL: 360
+  wrote 360 rows to project-92dd6ac6-23b0-47de-bb6:cacr_results.cve_scale_study
+
+=== Per-CVE report ===
+
+CVE                 gold          detect   parse_ok   errors   mean_lat  conf_distribution   
+--------------------------------------------------------------------------------------------------------------
+  CVE-2018-18074      high       30/30       30/30         0/0        589ms  min=10 med=10 max=10
+  CVE-2019-11324      critical   30/30       30/30         0/0        539ms  min=10 med=10 max=10
+  CVE-2019-20477      critical   30/30       30/30         0/0        652ms  min=10 med=10 max=10
+  CVE-2020-26137      medium     30/30       30/30         0/0        520ms  min=9 med=9 max=9
+  CVE-2020-28493      medium     30/30       30/30         0/0        488ms  min=9 med=9 max=9
+  CVE-2021-28363      high       30/30       30/30         0/0        575ms  min=10 med=10 max=10
+  CVE-2021-33503      medium     30/30       30/30         0/0        572ms  min=9 med=9 max=9
+  CVE-2022-23491      medium     30/30       30/30         0/0        625ms  min=8 med=8 max=8
+  CVE-2022-29217      critical   30/30       30/30         0/0        550ms  min=10 med=10 max=10
+  CVE-2023-25577      high       30/30       30/30         0/0        566ms  min=9 med=9 max=9
+  CVE-2023-30861      high       30/30       30/30         0/0        550ms  min=9 med=9 max=9
+  CVE-2023-32681      high       30/30       30/30         0/0        790ms  min=9 med=9 max=9
+
+=== Overall (360 calls) ===
+  detection_correct: 360/360 (100.0%)
+  parse_succeeded:   360/360 (100.0%)
+  parse_failed:      0/360 (0.0%)  ← silent failures
+  final_status != success: 0/360 (0.0%)
+  total retries: 0
+  error codes encountered: none
+  confidence histogram (parsed only, n=360): 8:30 9:180 10:150

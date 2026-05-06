@@ -48,21 +48,27 @@ export default function CostModel() {
   return (
     <div>
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-white">Cascade Cost Model</h2>
-        <p className="text-gray-400 mt-1">
-          Expected cost per (task, model) pair including cascade failure retry pricing.
-          Starred cells are the cost-optimal choice for each task.
+        <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-teal-700 font-semibold mb-2">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-teal-500" />
+          True cost = call price + retry cost when it fails
+        </div>
+        <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Cost Calculator</h2>
+        <p className="text-slate-600 mt-2 max-w-3xl leading-relaxed">
+          Cheap models that fail force expensive retries. This table shows the true expected cost of each
+          (task, model) pair — including cascade-failure pricing — so you pick the option that's actually cheapest
+          end-to-end. Cells marked <span className="font-semibold text-emerald-700">BEST</span> are the cost-optimal
+          choice for that task.
         </p>
       </div>
 
       {/* Cost matrix table */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 overflow-x-auto mb-6">
+      <div className="bg-white border border-slate-200 rounded-xl p-6 overflow-x-auto mb-6 shadow-sm">
         <table className="w-full text-sm border-collapse">
           <thead>
-            <tr className="border-b border-gray-700">
-              <th className="text-left px-3 py-2 text-gray-400 font-medium">Task</th>
+            <tr className="border-b border-slate-200">
+              <th className="text-left px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Task</th>
               {models.map(m => (
-                <th key={m} className="text-center px-3 py-2 text-gray-400 font-medium">
+                <th key={m} className="text-center px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
                   <span className="block truncate max-w-[100px]" title={m}>{shortLabel(m)}</span>
                 </th>
               ))}
@@ -70,25 +76,25 @@ export default function CostModel() {
           </thead>
           <tbody>
             {tasks.map(task => (
-              <tr key={task} className="border-b border-gray-800/50">
-                <td className="px-3 py-3 text-gray-300 font-medium">{task}</td>
+              <tr key={task} className="border-b border-slate-100 last:border-0">
+                <td className="px-3 py-3 text-slate-800 font-medium">{task}</td>
                 {models.map(model => {
                   const cell = data.find(r => r.task === task && r.model === model)
-                  if (!cell) return <td key={model} className="px-3 py-3 text-center text-gray-600">—</td>
+                  if (!cell) return <td key={model} className="px-3 py-3 text-center text-slate-300">—</td>
                   const optimal = cell.is_cost_optimal
                   const passes = cell.passes_threshold
                   return (
                     <td key={model} className="px-3 py-3">
-                      <div className={`text-center rounded-lg px-2 py-2 ${optimal ? 'bg-emerald-500/10 border border-emerald-500/30' : passes ? 'bg-gray-800/50' : 'bg-red-950/30 border border-red-800/20'}`}>
-                        <div className={`font-mono text-sm font-semibold ${optimal ? 'text-emerald-400' : passes ? 'text-gray-200' : 'text-red-400'}`}>
+                      <div className={`text-center rounded-lg px-2 py-2 ${optimal ? 'bg-emerald-50 border border-emerald-300' : passes ? 'bg-slate-50 border border-slate-200' : 'bg-red-50 border border-red-200'}`}>
+                        <div className={`font-mono text-sm font-semibold ${optimal ? 'text-emerald-700' : passes ? 'text-slate-800' : 'text-red-700'}`}>
                           {fmt$(cell.expected_cost_usd)}
-                          {optimal && <span className="ml-1 text-[10px] text-emerald-500">BEST</span>}
+                          {optimal && <span className="ml-1 text-[10px] text-emerald-700 font-bold tracking-wider">BEST</span>}
                         </div>
-                        <div className="text-[11px] text-gray-500 mt-1">
+                        <div className="text-[11px] text-slate-500 mt-1">
                           score {cell.mean_score.toFixed(2)} · {cell.mean_latency_ms.toFixed(0)}ms
                         </div>
                         {!passes && (
-                          <div className="text-[10px] text-red-500 mt-0.5">below threshold</div>
+                          <div className="text-[10px] text-red-600 mt-0.5">below threshold</div>
                         )}
                       </div>
                     </td>
@@ -101,13 +107,13 @@ export default function CostModel() {
       </div>
 
       {/* Formula explanation */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
-        <h3 className="text-sm font-semibold text-gray-300 mb-3">Cost Formula</h3>
-        <code className="block text-xs text-indigo-300 bg-gray-950 rounded-lg p-3 font-mono leading-relaxed">
+      <div className="bg-white border border-slate-200 rounded-xl p-6 mb-6 shadow-sm">
+        <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Cost Formula</h3>
+        <code className="block text-xs text-indigo-700 bg-slate-100 border border-slate-200 rounded-lg p-3 font-mono leading-relaxed">
           expected_cost = (model_cost/token × mean_tokens) × P(success)<br />
           &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ retry_cost × P(failure) × cascade_depth
         </code>
-        <p className="text-xs text-gray-500 mt-3">
+        <p className="text-xs text-slate-500 mt-3">
           cascade_depth = 3 (pipeline length) · retry_cost = one Haiku call as fallback ·
           P(success) = mean_score from benchmark · mean_tokens ≈ 230
         </p>
@@ -126,11 +132,20 @@ export default function CostModel() {
 }
 
 function Loader() {
-  return <div className="flex items-center justify-center h-64"><div className="animate-pulse text-gray-500 text-sm">Loading cost model...</div></div>
+  return (
+    <div className="flex items-center justify-center h-64">
+      <div className="text-center max-w-sm px-6">
+        <div className="animate-pulse text-slate-700 text-sm font-medium">Loading the cost matrix…</div>
+        <div className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+          Computing expected cost per (model, task) pair: API price × tokens × P(success) + Haiku-fallback retry × P(failure).
+        </div>
+      </div>
+    </div>
+  )
 }
 function Err({ message }) {
-  return <div className="flex items-center justify-center h-64"><div className="bg-red-950/50 border border-red-800 rounded-lg px-6 py-4 text-red-400 text-sm">Failed to load data: {message}</div></div>
+  return <div className="flex items-center justify-center h-64"><div className="bg-red-50 border border-red-200 rounded-lg px-6 py-4 text-red-700 text-sm">Failed to load data: {message}</div></div>
 }
 function Empty() {
-  return <div className="flex items-center justify-center h-64"><div className="bg-gray-900 border border-gray-800 rounded-lg px-6 py-4 text-gray-400 text-sm">No cost matrix data available.</div></div>
+  return <div className="flex items-center justify-center h-64"><div className="bg-white border border-slate-200 rounded-lg px-6 py-4 text-slate-600 text-sm shadow-sm">No cost matrix data available.</div></div>
 }

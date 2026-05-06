@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ELI5Panel from '../components/ELI5Panel'
+import PipelineCost from './PipelineCost'
 import { modelTier, shortLabel } from '../lib/modelLabels'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -88,6 +89,10 @@ const STRATEGY_OPTIONS = [
 ]
 
 const STEP_NAMES = ['Classification', 'Analysis', 'Remediation']
+// Anchor for the human-readable cost projection. 30k/day is a reasonable
+// "small production app" scale — same multiplier the user sees on every
+// dollar figure in the dashboard so the relative comparisons hold.
+const DAILY_VOLUME = 30000
 
 // ── Helpers ──────────────────────────────────────────────────────────
 function fmtCost(usd) {
@@ -98,10 +103,31 @@ function fmtCost(usd) {
   return `$${usd.toFixed(2)}`
 }
 
+// Human anchor for sub-cent costs. Without it, "$0.000043" reads as noise.
+// At 30k queries/day, the same number becomes "$1.29/day" — a scale a
+// person can reason about.
+function fmtCostDaily(usd) {
+  if (usd == null) return '—'
+  const daily = usd * DAILY_VOLUME
+  if (daily < 1) return `≈ $${daily.toFixed(2)}/day at ${(DAILY_VOLUME / 1000).toFixed(0)}k queries`
+  if (daily < 100) return `≈ $${daily.toFixed(2)}/day at ${(DAILY_VOLUME / 1000).toFixed(0)}k queries`
+  return `≈ $${daily.toFixed(0)}/day at ${(DAILY_VOLUME / 1000).toFixed(0)}k queries`
+}
+
 function fmtLat(ms) {
   if (ms == null) return '—'
   if (ms < 1000) return `${Math.round(ms)} ms`
   return `${(ms / 1000).toFixed(2)} s`
+}
+
+// Plain-English label for a confidence value relative to the user's
+// escalation threshold. Same tiers as `confidenceTier` below — kept as
+// a separate helper so the prose can drift from the color logic.
+function confidenceLabel(value, threshold) {
+  if (value == null) return 'No confidence signal — fallback escalation triggered'
+  if (value >= threshold) return 'High confidence — no escalation needed'
+  if (value >= threshold - 1) return `Borderline — would have escalated at threshold ${threshold + 1}`
+  return 'Low confidence — escalation triggered'
 }
 
 function strategyLabel(value) {
@@ -154,28 +180,35 @@ function classificationChanged(initial_output, escalation_output) {
 function ConfidenceBar({ value, threshold }) {
   const tier = confidenceTier(value, threshold)
   const fill = tier === 'green' ? 'bg-emerald-500'
-             : tier === 'yellow' ? 'bg-yellow-500'
+             : tier === 'yellow' ? 'bg-amber-500'
              : 'bg-red-500'
-  const text = tier === 'green' ? 'text-emerald-300'
-             : tier === 'yellow' ? 'text-yellow-300'
-             : 'text-red-300'
+  const text = tier === 'green' ? 'text-emerald-700'
+             : tier === 'yellow' ? 'text-amber-700'
+             : 'text-red-700'
+  const label = confidenceLabel(value, threshold)
   if (value == null) {
     return (
-      <div className="flex items-center gap-2">
-        <div className="flex-1 bg-gray-800 rounded-full h-2 overflow-hidden">
-          <div className="h-full bg-red-500/60" style={{ width: '100%' }} />
+      <div>
+        <div className="flex items-center gap-2">
+          <div className="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden">
+            <div className="h-full bg-red-400/70" style={{ width: '100%' }} />
+          </div>
+          <span className={`text-xs font-mono ${text} tabular-nums`}>no signal</span>
         </div>
-        <span className={`text-xs font-mono ${text} tabular-nums`}>no signal</span>
+        <div className={`text-xs ${text} mt-1`}>{label}</div>
       </div>
     )
   }
   const pct = Math.max(0, Math.min(100, (value / 10) * 100))
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 bg-gray-800 rounded-full h-2 overflow-hidden">
-        <div className={`h-full ${fill} transition-all`} style={{ width: `${pct}%` }} />
+    <div>
+      <div className="flex items-center gap-2">
+        <div className="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden">
+          <div className={`h-full ${fill} transition-all`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className={`text-xs font-mono ${text} tabular-nums`}>{value}/10</span>
       </div>
-      <span className={`text-xs font-mono ${text} tabular-nums`}>{value}/10</span>
+      <div className={`text-xs ${text} mt-1`}>{label}</div>
     </div>
   )
 }
@@ -184,8 +217,8 @@ function ConfidenceBar({ value, threshold }) {
 function TierBadge({ model }) {
   const tier = modelTier(model)
   const cls = tier === 'frontier'
-    ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
-    : 'bg-gray-700/40 text-gray-300 border-gray-600/40'
+    ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+    : 'bg-slate-100 text-slate-700 border-slate-200'
   return (
     <span className={`text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded border ${cls}`}>
       {tier === 'frontier' ? 'frontier' : 'SLM'}
@@ -200,38 +233,38 @@ function EscalationTrace({ step, threshold }) {
   const escFields = parseStepFields(step.escalation_output)
   const changed = classificationChanged(step.initial_output, step.escalation_output)
   return (
-    <div className="border-l-2 border-indigo-500/50 pl-3 mt-2">
+    <div className="border-l-2 border-indigo-300 pl-3 mt-2">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="text-xs text-indigo-300 hover:text-indigo-200 font-medium flex items-center gap-1"
+        className="text-xs text-indigo-700 hover:text-indigo-900 font-medium flex items-center gap-1"
       >
         <span>{open ? '▾' : '▸'}</span> Escalation trace
       </button>
       {open && (
-        <div className="mt-2 space-y-2 text-xs text-gray-400">
+        <div className="mt-2 space-y-2 text-xs text-slate-600">
           <div className="grid grid-cols-2 gap-3">
-            <div className="bg-gray-950/80 rounded px-2 py-1.5 border border-gray-800">
-              <div className="text-gray-500 mb-0.5">Initial</div>
-              <div className="font-mono text-gray-300">{shortLabel(step.initial_model)}</div>
+            <div className="bg-slate-50 rounded px-2 py-1.5 border border-slate-200">
+              <div className="text-slate-500 mb-0.5">Initial</div>
+              <div className="font-mono text-slate-800">{shortLabel(step.initial_model)}</div>
               <div>conf: <span className="font-mono">{step.initial_confidence ?? 'null'}</span></div>
               {initialFields.severity && <div>severity: <span className="font-mono">{initialFields.severity}</span></div>}
               {initialFields.issue_type && <div>type: <span className="font-mono">{initialFields.issue_type}</span></div>}
               {initialFields.vulnerable !== null && <div>vulnerable: <span className="font-mono">{String(initialFields.vulnerable)}</span></div>}
             </div>
-            <div className="bg-gray-950/80 rounded px-2 py-1.5 border border-indigo-900/40">
-              <div className="text-indigo-400 mb-0.5">Escalated to</div>
-              <div className="font-mono text-indigo-200">{shortLabel(step.escalation_model)}</div>
+            <div className="bg-indigo-50 rounded px-2 py-1.5 border border-indigo-200">
+              <div className="text-indigo-700 mb-0.5">Escalated to</div>
+              <div className="font-mono text-indigo-900">{shortLabel(step.escalation_model)}</div>
               <div>conf: <span className="font-mono">{step.escalation_confidence ?? 'null'}</span></div>
               {escFields.severity && <div>severity: <span className="font-mono">{escFields.severity}</span></div>}
               {escFields.issue_type && <div>type: <span className="font-mono">{escFields.issue_type}</span></div>}
               {escFields.vulnerable !== null && <div>vulnerable: <span className="font-mono">{String(escFields.vulnerable)}</span></div>}
             </div>
           </div>
-          <div className={`text-xs font-medium ${changed ? 'text-amber-300' : 'text-gray-500'}`}>
+          <div className={`text-xs font-medium ${changed ? 'text-amber-700' : 'text-slate-500'}`}>
             {changed ? '⚠ Classification changed after escalation' : 'Classification unchanged after escalation (just higher confidence)'}
           </div>
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-slate-500">
             Initial confidence <span className="font-mono">{step.initial_confidence ?? 'null'}</span> was below threshold{' '}
             <span className="font-mono">{threshold}</span>; router escalated to the next-cheapest model with{' '}
             <span className="font-mono">mean_score ≥ 0.70</span>.
@@ -249,54 +282,60 @@ function StepCard({ step, idx, threshold }) {
   const output = step.accepted_output ?? ''
   const truncatedView = output.length > truncatedAt
   const shown = outputOpen || !truncatedView ? output : output.slice(0, truncatedAt) + '…'
-  const cardBorder = step.escalated ? 'border-indigo-900/50' : 'border-gray-800'
+  const cardBorder = step.escalated ? 'border-indigo-200' : 'border-slate-200'
   const cardLeftAccent = step.escalated ? 'border-l-2 border-l-indigo-500' : ''
   const totalCost = (step.initial_cost || 0) + (step.escalation_cost || 0)
   const totalLat = (step.initial_latency || 0) + (step.escalation_latency || 0)
   return (
-    <div className={`bg-gray-900 border ${cardBorder} ${cardLeftAccent} rounded-lg p-4 flex flex-col gap-2.5`}>
+    <div className={`bg-white border ${cardBorder} ${cardLeftAccent} rounded-lg p-4 flex flex-col gap-2.5 shadow-sm`}>
       <div className="flex items-baseline justify-between gap-3">
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-gray-500 font-medium">Step {idx + 1}</div>
-          <div className="text-sm font-semibold text-gray-200">{STEP_NAMES[idx] ?? step.name}</div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">Step {idx + 1}</div>
+          <div className="text-sm font-semibold text-slate-900">{STEP_NAMES[idx] ?? step.name}</div>
         </div>
         <div className="flex items-center gap-1.5">
           {step.escalated && (
-            <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+            <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
               Escalated
             </span>
           )}
           {step.below_threshold && (
-            <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40" title={step.warning ?? undefined}>
+            <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200" title={step.warning ?? undefined}>
               Below threshold
             </span>
           )}
         </div>
       </div>
 
+      {step.escalated && (
+        <div className="text-xs text-indigo-700 leading-snug -mt-1">
+          {shortLabel(step.initial_model)} wasn't confident enough — upgraded to {shortLabel(step.escalation_model)} automatically.
+        </div>
+      )}
+
       <div className="flex items-center gap-2">
-        <span className="text-xs font-mono text-gray-200">{shortLabel(step.accepted_model)}</span>
+        <span className="text-xs font-mono text-slate-800">{shortLabel(step.accepted_model)}</span>
         <TierBadge model={step.accepted_model} />
       </div>
 
       <div>
-        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Confidence</div>
+        <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Confidence</div>
         <ConfidenceBar value={step.accepted_confidence} threshold={threshold} />
       </div>
 
       <div>
-        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Output ({output.length} chars)</div>
-        <pre className="text-xs text-gray-300 font-mono bg-gray-950 border border-gray-800 rounded px-2 py-1.5 whitespace-pre-wrap break-words leading-snug">{shown}</pre>
+        <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Output ({output.length} chars)</div>
+        <pre className="text-xs text-slate-800 font-mono bg-slate-50 border border-slate-200 rounded px-2 py-1.5 whitespace-pre-wrap break-words leading-snug">{shown}</pre>
         {truncatedView && (
-          <button type="button" onClick={() => setOutputOpen(!outputOpen)} className="text-xs text-indigo-400 hover:text-indigo-300 mt-1">
+          <button type="button" onClick={() => setOutputOpen(!outputOpen)} className="text-xs text-teal-700 hover:text-teal-800 mt-1">
             {outputOpen ? 'Show less' : 'Show more'}
           </button>
         )}
       </div>
 
-      <div className="flex items-center justify-between text-xs text-gray-500 pt-1.5 border-t border-gray-800">
-        <span>Cost <span className="font-mono text-emerald-400">{fmtCost(totalCost)}</span></span>
-        <span>Latency <span className="font-mono text-gray-300">{fmtLat(totalLat)}</span></span>
+      <div className="flex items-center justify-between text-xs text-slate-500 pt-1.5 border-t border-slate-200">
+        <span>Cost <span className="font-mono text-emerald-700 font-semibold">{fmtCost(totalCost)}</span></span>
+        <span>Latency <span className="font-mono text-slate-700">{fmtLat(totalLat)}</span></span>
       </div>
 
       {step.escalated && <EscalationTrace step={step} threshold={threshold} />}
@@ -320,13 +359,13 @@ function StrategyColumn({ pipeline, threshold, label }) {
       : 'No fix produced.'
   return (
     <div className="flex flex-col gap-3">
-      <div className="bg-gray-900 border border-gray-700 rounded-lg px-4 py-3">
+      <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 shadow-sm">
         <div className="flex items-baseline justify-between">
-          <h3 className="text-base font-semibold text-white">{label}</h3>
-          <span className="text-xs text-gray-500 font-mono">{pipeline.strategy}</span>
+          <h3 className="text-base font-semibold text-slate-900">{label}</h3>
+          <span className="text-xs text-slate-500 font-mono">{pipeline.strategy}</span>
         </div>
-        <div className="text-xs text-gray-400 mt-0.5">
-          Models: <span className="font-mono text-gray-200">
+        <div className="text-xs text-slate-600 mt-0.5">
+          Models: <span className="font-mono text-slate-800">
             {[...new Set(pipeline.steps.map(s => s.accepted_model))].map(shortLabel).join(' → ')}
           </span>
         </div>
@@ -336,22 +375,23 @@ function StrategyColumn({ pipeline, threshold, label }) {
         <StepCard key={i} step={step} idx={i} threshold={threshold} />
       ))}
 
-      <div className="bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 mt-1">
+      <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 mt-1 shadow-sm">
         <div className="grid grid-cols-3 gap-3 text-center">
           <div>
-            <div className="text-[10px] uppercase tracking-wider text-gray-500">Total cost</div>
-            <div className="text-base font-mono font-bold text-emerald-400">{fmtCost(pipeline.total_cost_usd)}</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Total cost</div>
+            <div className="text-base font-mono font-bold text-emerald-700">{fmtCost(pipeline.total_cost_usd)}</div>
+            <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">{fmtCostDaily(pipeline.total_cost_usd)}</div>
           </div>
           <div>
-            <div className="text-[10px] uppercase tracking-wider text-gray-500">Total latency</div>
-            <div className="text-base font-mono font-bold text-gray-200">{fmtLat(pipeline.total_latency_ms)}</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Total latency</div>
+            <div className="text-base font-mono font-bold text-slate-800">{fmtLat(pipeline.total_latency_ms)}</div>
           </div>
           <div>
-            <div className="text-[10px] uppercase tracking-wider text-gray-500">API calls</div>
-            <div className="text-base font-mono font-bold text-gray-200">{totalCalls}</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">API calls</div>
+            <div className="text-base font-mono font-bold text-slate-800">{totalCalls}</div>
           </div>
         </div>
-        <div className="mt-3 pt-3 border-t border-gray-800 text-xs text-gray-400">{outcomeText}</div>
+        <div className="mt-3 pt-3 border-t border-slate-200 text-xs text-slate-600">{outcomeText}</div>
       </div>
     </div>
   )
@@ -384,7 +424,7 @@ function ComparisonBar({ result }) {
     const escStep = escalatedPipeline.steps[escalatedStepIdx]
     const initConf = escStep?.initial_confidence
     verdictText = `${escalatedPipeline.strategy === 'cacr' ? 'CACR' : strategyLabel(escalatedPipeline.strategy)} escalated at step ${stepNum} — initial model's confidence (${initConf ?? 'null'}) was below your threshold (${result.escalation_threshold}).`
-    tone = 'border-indigo-700/50 bg-indigo-950/30 text-indigo-200'
+    tone = 'border-indigo-200 bg-indigo-50 text-indigo-900'
   } else if (agreed) {
     let cheaper = null
     if (ratio != null && ratio > 1) cheaper = b
@@ -397,19 +437,19 @@ function ComparisonBar({ result }) {
     verdictText = cheaperLabel
       ? `Same outcome on this snippet. ${cheaperLabel} ran for ${fmtCost(savings)} less.`
       : 'Same outcome on this snippet at near-identical cost.'
-    tone = 'border-emerald-700/50 bg-emerald-950/30 text-emerald-200'
+    tone = 'border-emerald-200 bg-emerald-50 text-emerald-900'
   } else {
     verdictText = '⚠ Strategies disagree. Review the step-by-step trace to see where they diverge — confidence-based escalation only catches uncertain models, not overconfident wrong ones.'
-    tone = 'border-amber-700/50 bg-amber-950/30 text-amber-200'
+    tone = 'border-amber-200 bg-amber-50 text-amber-900'
   }
 
   return (
-    <div className={`mt-6 rounded-lg border ${tone} px-4 py-3`}>
+    <div className={`mt-6 rounded-lg border ${tone} px-4 py-3 shadow-sm`}>
       <div className="flex items-baseline justify-between gap-4 flex-wrap">
         <div className="text-sm font-medium">{verdictText}</div>
         {ratio != null && (
-          <div className="text-xs font-mono text-gray-400 whitespace-nowrap">
-            cost ratio A÷B: <span className="text-gray-200">{ratio.toFixed(2)}×</span>
+          <div className="text-xs font-mono text-slate-500 whitespace-nowrap">
+            cost ratio A÷B: <span className="text-slate-800">{ratio.toFixed(2)}×</span>
           </div>
         )}
       </div>
@@ -421,7 +461,7 @@ function ComparisonBar({ result }) {
 function ExampleCards({ onPick, disabled, cooldownRemaining }) {
   return (
     <div className="mt-6">
-      <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">Try these examples</h3>
+      <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Try these examples</h3>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {EXAMPLES.map(ex => (
           <button
@@ -429,12 +469,12 @@ function ExampleCards({ onPick, disabled, cooldownRemaining }) {
             type="button"
             disabled={disabled}
             onClick={() => onPick(ex.form)}
-            className="bg-gray-900 border border-gray-800 rounded-lg p-4 text-left hover:border-indigo-700/50 hover:bg-gray-900/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="bg-white border border-slate-200 rounded-lg p-4 text-left hover:border-teal-400 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
             title={disabled && cooldownRemaining > 0 ? `Cooldown: ${cooldownRemaining}s remaining` : undefined}
           >
-            <div className="text-sm font-semibold text-gray-200">{ex.title}</div>
-            <div className="text-xs text-gray-500 mt-1.5">{ex.caption}</div>
-            <div className="text-[10px] text-gray-600 mt-3 font-mono uppercase tracking-wider">
+            <div className="text-sm font-semibold text-slate-900">{ex.title}</div>
+            <div className="text-xs text-slate-600 mt-1.5">{ex.caption}</div>
+            <div className="text-[10px] text-slate-400 mt-3 font-mono uppercase tracking-wider">
               {strategyLabel(ex.form.strategy_a)} vs {strategyLabel(ex.form.strategy_b)} · threshold {ex.form.escalation_threshold}
             </div>
           </button>
@@ -457,28 +497,28 @@ function RunForm({ form, setForm, onSubmit, loading, cooldownRemaining, error })
   return (
     <form
       onSubmit={(e) => { e.preventDefault(); onSubmit(form) }}
-      className="bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col gap-4"
+      className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col gap-4 shadow-sm"
     >
       <div>
-        <label className="block text-sm font-medium text-gray-300 mb-1.5">Code snippet</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1.5">Code snippet</label>
         <textarea
           value={form.code_snippet}
           onChange={(e) => update('code_snippet', e.target.value)}
           rows={10}
           maxLength={5000}
           placeholder="Paste your code here..."
-          className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-100 font-mono placeholder:text-gray-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 resize-y"
+          className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-900 font-mono placeholder:text-slate-400 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:bg-white resize-y"
         />
-        <div className="text-xs text-gray-500 mt-1">{form.code_snippet.length}/5000 chars</div>
+        <div className="text-xs text-slate-500 mt-1">{form.code_snippet.length}/5000 chars</div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1.5">Task</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Task</label>
           <select
             value={form.task}
             onChange={(e) => update('task', e.target.value)}
-            className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30"
+            className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
           >
             <option value="CodeReview">Code Review</option>
             <option value="SecurityVuln">Security Vuln</option>
@@ -486,21 +526,21 @@ function RunForm({ form, setForm, onSubmit, loading, cooldownRemaining, error })
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1.5">Compare this...</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Compare this...</label>
           <select
             value={form.strategy_a}
             onChange={(e) => update('strategy_a', e.target.value)}
-            className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30"
+            className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
           >
             {STRATEGY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1.5">...against this</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">...against this</label>
           <select
             value={form.strategy_b}
             onChange={(e) => update('strategy_b', e.target.value)}
-            className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30"
+            className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
           >
             {STRATEGY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
@@ -509,8 +549,8 @@ function RunForm({ form, setForm, onSubmit, loading, cooldownRemaining, error })
 
       <div>
         <div className="flex items-baseline justify-between mb-1.5">
-          <label className="text-sm font-medium text-gray-300">Escalation threshold</label>
-          <span className="text-sm font-mono text-indigo-300">{form.escalation_threshold}/10</span>
+          <label className="text-sm font-medium text-slate-700">Escalation threshold</label>
+          <span className="text-sm font-mono text-teal-700 font-semibold">{form.escalation_threshold}/10</span>
         </div>
         <input
           type="range"
@@ -519,15 +559,15 @@ function RunForm({ form, setForm, onSubmit, loading, cooldownRemaining, error })
           step={1}
           value={form.escalation_threshold}
           onChange={(e) => update('escalation_threshold', Number(e.target.value))}
-          className="w-full accent-indigo-500"
+          className="w-full accent-teal-600"
         />
-        <div className="text-xs text-gray-500 mt-1">
+        <div className="text-xs text-slate-500 mt-1">
           Lower = fewer escalations (cheaper, more risk). Higher = more escalations (safer, more expensive).
         </div>
       </div>
 
       {error && (
-        <div className="bg-red-950/40 border border-red-800 rounded-lg px-3 py-2 text-red-300 text-xs">
+        <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-red-700 text-xs">
           {error}
         </div>
       )}
@@ -535,7 +575,7 @@ function RunForm({ form, setForm, onSubmit, loading, cooldownRemaining, error })
       <button
         type="submit"
         disabled={!canSubmit}
-        className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium py-2.5 rounded-lg transition-colors text-sm"
+        className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm shadow-sm disabled:shadow-none"
       >
         {loading ? 'Running... (6 API calls)'
           : cooldownActive ? `Cooldown: ${cooldownRemaining}s`
@@ -706,33 +746,37 @@ export default function CascadeDemo() {
     <div>
       {/* Hero */}
       <div className="mb-6">
-        <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-indigo-400 font-semibold mb-2">
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
-          Cascade Comparison
+        <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-indigo-600 font-semibold mb-2">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+          Live · Auto-runs on first load
         </div>
-        <h2 className="text-2xl font-bold text-white">Cascade Comparison</h2>
-        <p className="text-gray-400 mt-2 max-w-3xl">
-          Compare how different models and routing strategies handle a multi-step pipeline.
-          See where cascade failures happen, what they cost, and when confidence-based escalation
-          helps — and when it doesn't.
+        <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Live Demo</h2>
+        <p className="text-slate-600 mt-2 max-w-3xl leading-relaxed">
+          Watch two routing strategies handle the same security task live. CACR routes cheap first,
+          escalates only when confidence is low — cutting cost without sacrificing accuracy. The
+          first run is already streaming below.
         </p>
       </div>
 
       {/* Results panel — auto-loads default SSRF example on first mount. */}
       <div className="mb-6">
         {!result && loading && (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl px-6 py-12 text-center">
-            <div className="inline-flex items-center gap-2 text-gray-400">
-              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+          <div className="bg-white border border-slate-200 rounded-xl px-6 py-12 text-center shadow-sm">
+            <div className="inline-flex flex-col items-center gap-2 text-slate-600 max-w-md">
+              <svg className="animate-spin h-5 w-5 text-teal-600" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
               </svg>
-              Running default SSRF example (6 API calls, ~10s)...
+              <div className="font-medium text-slate-800">Running an SSRF detection through both strategies…</div>
+              <div className="text-xs text-slate-500 leading-relaxed">
+                One snippet, two pipelines, six live model calls (Flash baseline vs. CACR-routed) — about 10 seconds.
+                You'll see step-by-step confidence, model choice, and cost as soon as it lands.
+              </div>
             </div>
           </div>
         )}
         {!result && !loading && error && (
-          <div className="bg-red-950/40 border border-red-800 rounded-xl px-4 py-3 text-red-300 text-sm">
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-700 text-sm">
             {error}
           </div>
         )}
@@ -761,7 +805,7 @@ export default function CascadeDemo() {
 
       {/* Form */}
       <div className="mt-8">
-        <h3 className="text-lg font-semibold text-white mb-3">Run a custom comparison</h3>
+        <h3 className="text-lg font-semibold text-slate-900 mb-3">Run a custom comparison</h3>
         <RunForm
           form={form}
           setForm={setForm}
@@ -782,6 +826,39 @@ export default function CascadeDemo() {
         disabled={loading || cooldownRemaining > 0}
         cooldownRemaining={cooldownRemaining}
       />
+
+      {/* ── Full Benchmark Results ──────────────────────────────────────
+          Folded in from the former "Strategy Comparison" tab. Collapsed
+          by default so the live demo above stays the hero — but the
+          empirical backing is right here, one click away. <details> keeps
+          this state-free and survives a page refresh on a per-element
+          basis via the browser's native disclosure widget. */}
+      <details className="mt-12 pt-8 border-t border-slate-200 group">
+        <summary className="cursor-pointer list-none flex items-center justify-between gap-4 select-none">
+          <div>
+            <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-indigo-600 font-semibold mb-1">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500" />
+              Empirical backing · 44-row strategy comparison
+            </div>
+            <div className="text-xl font-bold text-slate-900 tracking-tight group-hover:text-teal-700 transition-colors">
+              Full Benchmark Results
+            </div>
+            <div className="text-sm text-slate-600 mt-1 max-w-2xl leading-relaxed">
+              Same 4-step security pipeline, four routing strategies, head-to-head — see how the live demo above
+              generalizes across the full benchmark.
+            </div>
+          </div>
+          <span
+            aria-hidden="true"
+            className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-500 group-hover:border-teal-500 group-hover:text-teal-700 group-open:rotate-180 transition-all"
+          >
+            ▾
+          </span>
+        </summary>
+        <div className="mt-6">
+          <PipelineCost />
+        </div>
+      </details>
     </div>
   )
 }

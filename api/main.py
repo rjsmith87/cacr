@@ -164,7 +164,7 @@ def _clean_str(value, *, field: str, max_len: int, allow_empty: bool = False) ->
 cache = Cache(app, config={"CACHE_TYPE": "SimpleCache", "CACHE_DEFAULT_TIMEOUT": 300})
 
 # Model used for ELI5 explanation endpoints.
-EXPLAIN_MODEL = "claude-sonnet-4-20250514"
+EXPLAIN_MODEL = "claude-sonnet-4-6"
 
 
 def _load_dotenv() -> None:
@@ -230,6 +230,12 @@ def health_check():
 @app.route("/api/health")
 @cache.cached(timeout=300)
 def health():
+    # NOTE: previously swallowed BigQuery errors and returned zeros for
+    # the three counts under a "status: ok" envelope — masking a backend
+    # failure as healthy emptiness. Match the error contract used by
+    # /api/pipeline-cost, /api/capability-matrix, and /api/calibration:
+    # surface the failure as a 500 with a clean error envelope so any
+    # consumer can distinguish "BigQuery is down" from "no data yet".
     try:
         client = _bq_client()
         row = list(client.query(
@@ -244,8 +250,8 @@ def health():
         tasks = list(client.query(
             "SELECT COUNT(DISTINCT task) as n FROM `cacr_results.benchmark_summaries`"
         ).result())[0].n
-    except Exception:
-        total_calls, models, tasks = 0, 0, 0
+    except Exception as exc:
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
 
     return jsonify({
         "status": "ok",
@@ -317,8 +323,14 @@ def calibration():
 @app.route("/api/pipeline-cost")
 @cache.cached(timeout=300)
 def pipeline_cost():
-    client = _bq_client()
+    # NOTE: previously swallowed BigQuery errors and returned `[]`, which
+    # caused the dashboard's EmptyState ("Run pipeline simulation first")
+    # to fire on real outages — masking a backend failure as a UX prompt.
+    # Match the error contract used by /api/capability-matrix and
+    # /api/calibration: surface the failure as a 500 with a clean
+    # error envelope so the dashboard renders an explicit error state.
     try:
+        client = _bq_client()
         rows = list(client.query("""
             SELECT *
             FROM `cacr_results.pipeline_results`
@@ -326,8 +338,8 @@ def pipeline_cost():
             ORDER BY strategy
         """).result())
         return jsonify([dict(r) for r in rows])
-    except Exception:
-        return jsonify([])
+    except Exception as exc:
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
 
 
 # ── GET /api/cost-matrix ───────────────────────────────────────────

@@ -15,10 +15,10 @@ function getModelColor(model, index) {
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload || payload.length === 0) return null
   return (
-    <div className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 shadow-xl text-sm">
+    <div className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 shadow-xl text-sm">
       <p className="font-semibold text-white mb-1">{label}</p>
       {payload.map((entry, i) => (
-        <div key={i} className="flex justify-between gap-4 text-gray-300">
+        <div key={i} className="flex justify-between gap-4 text-slate-200">
           <span style={{ color: entry.color }}>{entry.name}</span>
           <span className="font-mono">{Number(entry.value).toFixed(2)}</span>
         </div>
@@ -93,26 +93,19 @@ export default function ModelEfficiency() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-white">Model Efficiency</h2>
-        <p className="text-gray-400 mt-1">
-          Score-to-cost ratio per model per task. Higher bars = more value per dollar.
-        </p>
-      </div>
-
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         {modelSummaries.map((m, i) => (
-          <div key={m.model} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div key={m.model} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: m.color }} />
-              <span className="text-sm font-medium text-gray-200 truncate" title={m.model}>{shortLabel(m.model)}</span>
+              <span className="text-sm font-medium text-slate-800 truncate" title={m.model}>{shortLabel(m.model)}</span>
             </div>
-            <p className="text-2xl font-bold font-mono" style={{ color: m.color }}>
+            <p className="text-3xl font-bold font-mono tracking-tight" style={{ color: m.color }}>
               {m.avgEfficiency.toFixed(1)}
             </p>
-            <p className="text-xs text-gray-500 mt-1">avg score/cost ratio</p>
-            <div className="mt-2 flex justify-between text-xs text-gray-500">
+            <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider font-semibold">avg score/cost ratio</p>
+            <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between text-xs text-slate-500 font-mono">
               <span>Score: {m.avgScore.toFixed(2)}</span>
               <span>Cost: ${m.avgCost.toFixed(4)}</span>
             </div>
@@ -121,7 +114,7 @@ export default function ModelEfficiency() {
       </div>
 
       {/* Bar chart */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
         <ResponsiveContainer
           width="100%"
           height={Math.max(500, tasks.length * (models.length * 18 + 60))}
@@ -131,27 +124,29 @@ export default function ModelEfficiency() {
             layout="vertical"
             margin={{ top: 10, right: 30, bottom: 10, left: 100 }}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" horizontal={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal={false} />
             <XAxis
               type="number"
-              tick={{ fill: '#9ca3af', fontSize: 12 }}
-              label={{ value: 'Score / Cost Ratio', position: 'bottom', offset: 0, fill: '#9ca3af', fontSize: 13 }}
+              tick={{ fill: '#475569', fontSize: 12 }}
+              stroke="#CBD5E1"
+              label={{ value: 'Score / Cost Ratio', position: 'bottom', offset: 0, fill: '#64748B', fontSize: 13 }}
             />
             <YAxis
               type="category"
               dataKey="task"
-              tick={{ fill: '#9ca3af', fontSize: 12 }}
+              tick={{ fill: '#475569', fontSize: 12 }}
+              stroke="#CBD5E1"
               width={90}
             />
-            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(107, 114, 128, 0.1)' }} />
-            <Legend wrapperStyle={{ color: '#d1d5db', paddingTop: '16px' }} />
+            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(13, 148, 136, 0.08)' }} />
+            <Legend wrapperStyle={{ color: '#334155', paddingTop: '16px' }} />
             {models.map((model, i) => (
               <Bar
                 key={model}
                 dataKey={model}
                 name={shortLabel(model)}
                 fill={getModelColor(model, i)}
-                fillOpacity={0.85}
+                fillOpacity={0.92}
                 radius={[0, 4, 4, 0]}
                 barSize={14}
               />
@@ -171,7 +166,12 @@ export default function ModelEfficiency() {
 function LoadingState() {
   return (
     <div className="flex items-center justify-center h-64">
-      <div className="animate-pulse text-gray-500 text-sm">Loading cost matrix data...</div>
+      <div className="text-center max-w-sm px-6">
+        <div className="animate-pulse text-slate-700 text-sm font-medium">Loading efficiency ratios…</div>
+        <div className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+          Dividing each model's mean score by its expected cost on each task to surface the per-dollar winner.
+        </div>
+      </div>
     </div>
   )
 }
@@ -179,7 +179,7 @@ function LoadingState() {
 function ErrorState({ message }) {
   return (
     <div className="flex items-center justify-center h-64">
-      <div className="bg-red-950/50 border border-red-800 rounded-lg px-6 py-4 text-red-400 text-sm">
+      <div className="bg-red-50 border border-red-200 rounded-lg px-6 py-4 text-red-700 text-sm">
         Failed to load data: {message}
       </div>
     </div>
@@ -189,7 +189,7 @@ function ErrorState({ message }) {
 function EmptyState() {
   return (
     <div className="flex items-center justify-center h-64">
-      <div className="bg-gray-900 border border-gray-800 rounded-lg px-6 py-4 text-gray-400 text-sm">
+      <div className="bg-white border border-slate-200 rounded-lg px-6 py-4 text-slate-600 text-sm shadow-sm">
         No cost matrix data available. Run benchmarks first.
       </div>
     </div>

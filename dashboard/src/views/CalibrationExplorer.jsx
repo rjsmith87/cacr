@@ -13,9 +13,9 @@ function CustomTooltip({ active, payload }) {
   const d = payload[0]?.payload
   if (!d) return null
   return (
-    <div className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 shadow-xl text-sm">
+    <div className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 shadow-xl text-sm">
       <p className="font-semibold text-white mb-1">{d.model}</p>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-gray-300">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-slate-200">
         <span>Confidence:</span>
         <span className="text-right font-mono">{d.confidence_score}</span>
         <span>Actual Score:</span>
@@ -88,42 +88,50 @@ export default function CalibrationExplorer() {
   return (
     <div>
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-white">Calibration Explorer</h2>
-        <p className="text-gray-400 mt-1">
-          Confidence vs. actual score. Points on the dashed line indicate perfect calibration (y = x/10).
+        <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-teal-700 font-semibold mb-2">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-teal-500" />
+          Self-reported confidence vs. actual accuracy
+        </div>
+        <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Confidence Accuracy</h2>
+        <p className="text-slate-600 mt-2 max-w-3xl leading-relaxed">
+          Models that say "9/10 confident" should be right 90% of the time. This chart shows which models are honest
+          about uncertainty — and which are dangerously overconfident. Points on the dashed line are perfectly calibrated;
+          points above are pessimistic, points below are overconfident.
         </p>
       </div>
 
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
         <ResponsiveContainer width="100%" height={500}>
           <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
             <XAxis
               type="number" dataKey="confidence_score" name="Confidence"
               domain={[0, 10]}
-              tick={{ fill: '#9ca3af', fontSize: 12 }}
-              label={{ value: 'Confidence Score (1-10)', position: 'bottom', offset: 0, fill: '#9ca3af', fontSize: 13 }}
+              tick={{ fill: '#475569', fontSize: 12 }}
+              stroke="#CBD5E1"
+              label={{ value: 'Confidence Score (1-10)', position: 'bottom', offset: 0, fill: '#64748B', fontSize: 13 }}
             />
             <YAxis
               type="number" dataKey="score" name="Actual Score"
               domain={[0, 1]}
-              tick={{ fill: '#9ca3af', fontSize: 12 }}
-              label={{ value: 'Actual Score (0-1)', angle: -90, position: 'insideLeft', offset: 10, fill: '#9ca3af', fontSize: 13 }}
+              tick={{ fill: '#475569', fontSize: 12 }}
+              stroke="#CBD5E1"
+              label={{ value: 'Actual Score (0-1)', angle: -90, position: 'insideLeft', offset: 10, fill: '#64748B', fontSize: 13 }}
             />
             <ZAxis range={[40, 40]} />
-            <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: '3 3', stroke: '#6b7280' }} />
-            <Legend wrapperStyle={{ color: '#d1d5db', paddingTop: '16px' }} />
+            <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: '3 3', stroke: '#94A3B8' }} />
+            <Legend wrapperStyle={{ color: '#334155', paddingTop: '16px' }} />
 
             <Scatter
               name="Perfect Calibration" data={refLineData}
-              fill="none" stroke="#6b7280" strokeDasharray="6 4"
+              fill="none" stroke="#94A3B8" strokeDasharray="6 4"
               line={{ strokeWidth: 2 }} legendType="line" shape={() => null}
             />
 
             {modelNames.map((model, i) => (
               <Scatter
                 key={model} name={shortLabel(model)} data={byModel[model]}
-                fill={modelColor(model, i)} fillOpacity={0.7}
+                fill={modelColor(model, i)} fillOpacity={0.85}
                 shape={modelShape(model)}
               />
             ))}
@@ -139,7 +147,12 @@ export default function CalibrationExplorer() {
 function LoadingState() {
   return (
     <div className="flex items-center justify-center h-64">
-      <div className="animate-pulse text-gray-500 text-sm">Loading calibration data...</div>
+      <div className="text-center max-w-sm px-6">
+        <div className="animate-pulse text-slate-700 text-sm font-medium">Loading calibration scatter…</div>
+        <div className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+          Each point pairs a model's self-reported confidence with how it actually scored on that trial.
+        </div>
+      </div>
     </div>
   )
 }
@@ -147,7 +160,7 @@ function LoadingState() {
 function ErrorState({ message }) {
   return (
     <div className="flex items-center justify-center h-64">
-      <div className="bg-red-950/50 border border-red-800 rounded-lg px-6 py-4 text-red-400 text-sm">
+      <div className="bg-red-50 border border-red-200 rounded-lg px-6 py-4 text-red-700 text-sm">
         Failed to load data: {message}
       </div>
     </div>
@@ -157,7 +170,7 @@ function ErrorState({ message }) {
 function EmptyState() {
   return (
     <div className="flex items-center justify-center h-64">
-      <div className="bg-gray-900 border border-gray-800 rounded-lg px-6 py-4 text-gray-400 text-sm">
+      <div className="bg-white border border-slate-200 rounded-lg px-6 py-4 text-slate-600 text-sm shadow-sm">
         No calibration data available. Run calibration experiments first.
       </div>
     </div>
