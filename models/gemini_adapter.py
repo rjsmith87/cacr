@@ -55,10 +55,15 @@ def _is_logprob_unsupported_error(exc: Exception) -> bool:
     GenerationResult when logprobs aren't available — same path Anthropic
     and o3 take by inheriting the base-class default.
 
-    Match is on the textual message because google-genai's ClientError
-    doesn't expose a structured error code beyond status_code=400.
+    SDK quirk: google-genai's ClientError exposes the HTTP code as `.code`
+    on current releases, not `.status_code` — older releases used the
+    other name. We check both so the match works regardless of which SDK
+    minor version is installed. The message-string match is the strict
+    part — "Logprobs is not enabled" only appears in this specific
+    rejection, so we won't accidentally swallow other 400s.
     """
-    if getattr(exc, "status_code", 0) != 400:
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None) or 0
+    if code != 400:
         return False
     return "Logprobs is not enabled" in str(exc)
 

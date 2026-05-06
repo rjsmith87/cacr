@@ -489,6 +489,20 @@ def test_gemini_flash_lite_uses_same_aggregator(monkeypatch):
     assert result.output_token_count == 2
 
 
+def _make_client_error(message: str, code: int = 400):
+    """Construct a real google-genai ClientError via its actual __init__
+    signature so the test exercises the production attribute layout
+    (.code, .message, str(exc) format) — NOT a hand-built mock that
+    masks SDK drift. The previous version of these tests bypassed
+    __init__ and set .status_code by hand; that hid a real bug where
+    the production exception uses .code, not .status_code."""
+    from google.genai import errors as genai_errors
+    return genai_errors.ClientError(
+        code,
+        {"error": {"code": code, "message": message}},
+    )
+
+
 def test_gemini_flash_falls_back_when_api_rejects_logprobs(monkeypatch):
     """Production regression: the Gemini 2.5 series rejects
     response_logprobs=True with a 400 INVALID_ARGUMENT 'Logprobs is
@@ -496,19 +510,17 @@ def test_gemini_flash_falls_back_when_api_rejects_logprobs(monkeypatch):
     error and fall back to plain generate() rather than propagating
     the failure (which would empty the cascade step and force the
     router to escalate every Gemini call). Same defensive degradation
-    as the Anthropic / o3 / vertex no-logprob path."""
+    as the Anthropic / o3 / vertex no-logprob path.
+
+    Test uses a real ClientError instance constructed via the SDK's
+    own __init__ — NOT a hand-built mock — so we'd catch any future
+    drift in the .code attribute name or the str(exc) format."""
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     from models.gemini_adapter import GeminiFlash
-    from google.genai import errors as genai_errors
 
     adapter = GeminiFlash()
-
-    fake_400 = genai_errors.ClientError.__new__(genai_errors.ClientError)
-    fake_400.status_code = 400
-    fake_400.args = (
-        "400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': "
-        "'Logprobs is not enabled for models/gemini-2.5-flash', "
-        "'status': 'INVALID_ARGUMENT'}}",
+    fake_400 = _make_client_error(
+        "Logprobs is not enabled for models/gemini-2.5-flash"
     )
 
     structured_call_count = 0
@@ -545,16 +557,10 @@ def test_gemini_flash_lite_falls_back_when_api_rejects_logprobs(monkeypatch):
     is what the live API returned during the Phase 1 deploy probe."""
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     from models.gemini_flash_lite_adapter import GeminiFlashLite
-    from google.genai import errors as genai_errors
 
     adapter = GeminiFlashLite()
-
-    fake_400 = genai_errors.ClientError.__new__(genai_errors.ClientError)
-    fake_400.status_code = 400
-    fake_400.args = (
-        "400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': "
-        "'Logprobs is not enabled for models/gemini-2.5-flash-lite', "
-        "'status': 'INVALID_ARGUMENT'}}",
+    fake_400 = _make_client_error(
+        "Logprobs is not enabled for models/gemini-2.5-flash-lite"
     )
 
     def fake_generate_content(model, contents, config):
@@ -583,10 +589,7 @@ def test_gemini_flash_propagates_non_logprob_400(monkeypatch):
     from google.genai import errors as genai_errors
 
     adapter = GeminiFlash()
-
-    other_400 = genai_errors.ClientError.__new__(genai_errors.ClientError)
-    other_400.status_code = 400
-    other_400.args = ("400 INVALID_ARGUMENT. malformed prompt",)
+    other_400 = _make_client_error("malformed prompt")
 
     def fake_generate_content(model, contents, config):
         raise other_400
@@ -598,6 +601,34 @@ def test_gemini_flash_propagates_non_logprob_400(monkeypatch):
     adapter._client = _FakeClient()
     with pytest.raises(genai_errors.ClientError):
         adapter.generate_structured("p")
+
+
+def test_is_logprob_unsupported_helper_handles_attribute_drift():
+    """Guard: the helper must work whether the SDK exposes the HTTP
+    code as .code (current) or .status_code (older). This is the
+    exact bug class that caused the first hotfix to fail in
+    production despite passing mock-based tests."""
+    from models.gemini_adapter import _is_logprob_unsupported_error
+    from google.genai import errors as genai_errors
+
+    # Production shape: real ClientError has .code, not .status_code.
+    real = _make_client_error("Logprobs is not enabled for models/foo")
+    assert _is_logprob_unsupported_error(real) is True
+
+    # Older-SDK shape simulation: only .status_code is set.
+    class _OldStyle(Exception):
+        status_code = 400
+        def __str__(self):
+            return "400 ... Logprobs is not enabled for models/foo"
+    assert _is_logprob_unsupported_error(_OldStyle()) is True
+
+    # Wrong code → False.
+    e404 = genai_errors.ClientError(404, {"error": {"code": 404, "message": "Logprobs is not enabled"}})
+    assert _is_logprob_unsupported_error(e404) is False
+
+    # 400 but a different message → False (don't paper over real failures).
+    e_other = _make_client_error("malformed prompt")
+    assert _is_logprob_unsupported_error(e_other) is False
 
 
 def test_default_generate_structured_is_no_signal():
