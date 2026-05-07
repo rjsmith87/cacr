@@ -857,7 +857,8 @@ def test_router_escalates_when_no_signal_at_all():
 
 
 def test_router_default_logprob_threshold_is_documented_placeholder():
-    """The 0.85 default is a placeholder pending calibration — guard
-    against silent drift. If you change the constant, update the
-    Level 2 calibration doc and bump this test."""
-    assert DEFAULT_LOGPROB_THRESHOLD == 0.85
+    """Calibrated 2026-05-06 to 0.96 (Youden's J = 0.643 against 90
+    GPT-4o-mini calls). Guard against silent drift — if you change
+    the constant, update the calibration comment in cascade_router.py
+    and bump this test."""
+    assert DEFAULT_LOGPROB_THRESHOLD == 0.96

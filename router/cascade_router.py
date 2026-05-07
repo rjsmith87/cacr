@@ -53,8 +53,12 @@ from router.policy import LookupTableRouter, MIN_ACCEPTABLE_SCORE
 # benchmark suite, plotting logprob distribution by score, and picking
 # the threshold that maximizes correct-acceptance vs incorrect-
 # acceptance separation. See docs/level2_calibration.md (TBD).
-# TODO(level2-phase1): replace 0.85 with empirically calibrated value.
-DEFAULT_LOGPROB_THRESHOLD = 0.85
+# Calibrated 2026-05-06 against 90 GPT-4o-mini calls (30 per task:
+# CodeReview, SecurityVuln, CodeSummarization). Youden's J = 0.643
+# at tau=0.96 (TPR=0.862, FPR=0.219). GPT-4o-mini only — Gemini
+# logprobs unavailable on 2.5 series. Recalibrate when Gemini
+# logprob support is added.
+DEFAULT_LOGPROB_THRESHOLD = 0.96
 
 
 @dataclass
