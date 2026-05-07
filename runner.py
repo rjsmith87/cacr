@@ -109,8 +109,15 @@ def run(tasks: Iterable[Task], models: Iterable[Model]) -> list[dict[str, Any]]:
                 t0 = time.perf_counter()
                 error = None
                 output = ""
+                logprob_mean: float | None = None
+                logprob_min: float | None = None
+                output_token_count: int | None = None
                 try:
-                    output = model.generate(prompt)
+                    result = model.generate_structured(prompt)
+                    output = result.text
+                    logprob_mean = result.logprob_mean
+                    logprob_min = result.logprob_min
+                    output_token_count = result.output_token_count or None
                 except Exception as exc:  # noqa: BLE001 — log and continue
                     error = f"{type(exc).__name__}: {exc}"
                 latency_ms = (time.perf_counter() - t0) * 1000.0
@@ -165,6 +172,9 @@ def run(tasks: Iterable[Task], models: Iterable[Model]) -> list[dict[str, Any]]:
                     "latency_ms": round(latency_ms, 2),
                     "score": score,
                     "confidence_score": confidence_score,
+                    "logprob_mean": logprob_mean,
+                    "logprob_min": logprob_min,
+                    "output_token_count": output_token_count,
                     "output": output,
                     "error": error,
                 }

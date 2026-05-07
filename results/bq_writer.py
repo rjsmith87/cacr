@@ -65,6 +65,12 @@ CALLS_SCHEMA = [
     bigquery.SchemaField("confidence_score", "INTEGER"),
     bigquery.SchemaField("output", "STRING"),
     bigquery.SchemaField("error", "STRING"),
+    bigquery.SchemaField("logprob_mean", "FLOAT",
+                         description="Mean per-token logprob across visible output tokens; NULL when SDK doesn't expose"),
+    bigquery.SchemaField("logprob_min", "FLOAT",
+                         description="Min per-token logprob (worst-token signal); NULL when unavailable"),
+    bigquery.SchemaField("output_token_count", "INTEGER",
+                         description="Number of output tokens the logprob aggregation ran over"),
     # ── Phase-2 additions (all NULLABLE for backward compat) ──
     bigquery.SchemaField("source", "STRING",
                          description="'batch_run' | 'live_trace' | 'user_submission'"),
