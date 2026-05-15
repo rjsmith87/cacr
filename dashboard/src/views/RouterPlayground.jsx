@@ -1,289 +1,456 @@
-import { useState } from 'react'
-import ReactMarkdown from 'react-markdown'
+import { useEffect, useMemo, useState } from 'react'
 import ELI5Panel from '../components/ELI5Panel'
-import { scanDangerousPatterns } from '../lib/dangerousPatterns'
+import { modelColor, shortLabel } from '../lib/modelLabels'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-export default function RouterPlayground() {
-  const [form, setForm] = useState({
-    code_snippet: '',
-    task: '',
-    complexity: 'auto',
-    pipeline_position: 1,
-  })
-  const [result, setResult] = useState(null)
-  const [loading, setLoading] = useState(false)
+// Mirrors router/policy.py — the global accuracy floor a model must
+// clear before the router will recommend it without a warning.
+const MIN_ACCEPTABLE_SCORE = 0.70
+
+const TASK_LABELS = {
+  CodeReview: 'Code Review',
+  SecurityVuln: 'Security Vuln',
+  CodeSummarization: 'Code Summary',
+}
+
+function fmt$(v) {
+  if (v == null || Number.isNaN(v)) return '—'
+  const n = Number(v)
+  if (n === 0) return '$0'
+  const abs = Math.abs(n)
+  if (abs >= 1000) return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+  if (abs >= 100) return `$${n.toFixed(0)}`
+  if (abs >= 1) return `$${n.toFixed(2)}`
+  if (abs >= 0.01) return `$${n.toFixed(4)}`
+  return `$${n.toFixed(6)}`
+}
+
+function fmtScore(v) {
+  if (v == null || Number.isNaN(v)) return '—'
+  return Number(v).toFixed(2)
+}
+
+export default function CostOfBadRouting() {
+  const [matrix, setMatrix] = useState(null)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  // mismatchWarning: { patterns: string[], originalTask: string } | null
-  // Set when the pasted code contains dangerous patterns and the user
-  // routed it under a non-SecurityVuln task. Banner is informational
-  // only — submission is never blocked.
-  const [mismatchWarning, setMismatchWarning] = useState(null)
+  const [monthlyVolume, setMonthlyVolume] = useState(10000)
 
-  // Extracted so the "Switch to Security Vuln" button can call it with
-  // an explicit task override without going through React's async state
-  // update (which would race the re-fetch).
-  const route = async (task) => {
-    setLoading(true)
-    setError(null)
-    setResult(null)
-
-    // Client-side dangerous-pattern scan — do this BEFORE the network
-    // call so the banner is in place by the time the result lands.
-    const matched = scanDangerousPatterns(form.code_snippet)
-    if (matched.length > 0 && task !== 'SecurityVuln') {
-      setMismatchWarning({ patterns: matched, originalTask: task })
-    } else {
-      setMismatchWarning(null)
-    }
-
-    try {
-      const res = await fetch(`${API}/api/route`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: form.code_snippet,
-          task,
-          complexity: form.complexity,
-          pipeline_position: form.pipeline_position,
-        }),
+  useEffect(() => {
+    fetch(`${API}/api/cost-matrix`)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
       })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      setResult(data)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
+      .then(raw => {
+        const rows = (Array.isArray(raw) ? raw : []).map(r => ({
+          ...r,
+          mean_score: Number(r.mean_score || 0),
+          expected_cost_usd: Number(r.expected_cost_usd || 0),
+          cost_per_token: Number(r.cost_per_token || 0),
+        }))
+        setMatrix(rows)
+      })
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const analysis = useMemo(() => {
+    if (!matrix || matrix.length === 0) return null
+
+    const tasks = [...new Set(matrix.map(r => r.task))].sort()
+    const models = [...new Set(matrix.map(r => r.model))]
+    const perTaskVolume = monthlyVolume / tasks.length
+
+    const buildStrategy = (label, picks, kind, model = null) => {
+      const taskCosts = {}
+      const taskScores = {}
+      let total = 0
+      let scoreSum = 0
+      let passing = 0
+      picks.forEach(({ task, row }) => {
+        const cost = (row?.expected_cost_usd || 0) * perTaskVolume
+        taskCosts[task] = cost
+        taskScores[task] = row?.mean_score ?? null
+        total += cost
+        scoreSum += row?.mean_score || 0
+        if (row && row.mean_score >= MIN_ACCEPTABLE_SCORE) passing += 1
+      })
+      return {
+        kind,
+        label,
+        model,
+        total,
+        meanScore: scoreSum / Math.max(1, tasks.length),
+        taskCosts,
+        taskScores,
+        picks,
+        passingTasks: passing,
+        taskCount: tasks.length,
+      }
     }
-  }
 
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    route(form.task)
-  }
+    const naiveStrategies = models.map(m => {
+      const picks = tasks.map(t => ({
+        task: t,
+        row: matrix.find(r => r.task === t && r.model === m),
+      }))
+      return buildStrategy(`Always ${shortLabel(m)}`, picks, 'naive', m)
+    })
 
-  const switchToSecurityVuln = () => {
-    setForm(prev => ({ ...prev, task: 'SecurityVuln' }))
-    route('SecurityVuln')
-  }
+    // CACR routing: per task pick the cheapest passing model (>= 0.70);
+    // if nothing passes, pick the best-available (highest mean_score)
+    // and inherit a below-threshold flag for that task.
+    const cacrPicks = tasks.map(t => {
+      const rows = matrix.filter(r => r.task === t)
+      const passing = rows.filter(r => r.mean_score >= MIN_ACCEPTABLE_SCORE)
+      const row = passing.length
+        ? passing.reduce((best, r) => r.expected_cost_usd < best.expected_cost_usd ? r : best)
+        : rows.reduce((best, r) => r.mean_score > best.mean_score ? r : best, rows[0])
+      return { task: t, row, passing: passing.length > 0 }
+    })
+    const cacrStrategy = buildStrategy('CACR routing', cacrPicks, 'cacr')
 
-  const updateField = (field, value) => setForm(prev => ({ ...prev, [field]: value }))
+    const allStrategies = [...naiveStrategies, cacrStrategy].sort((a, b) => a.total - b.total)
+    const cheapestNaive = naiveStrategies.reduce((best, s) => s.total < best.total ? s : best)
+    const mostExpensiveNaive = naiveStrategies.reduce((worst, s) => s.total > worst.total ? s : worst)
 
-  const TASK_LABELS = {
-    CodeReview: 'Code Review',
-    SecurityVuln: 'Security Vuln',
-    CodeSummarization: 'Code Summarization',
-  }
+    // Dominated-strategy detector: any naive strategy where another
+    // naive strategy is BOTH cheaper AND scores higher. Rational actor
+    // would never pick a dominated option. Surfaces the classic
+    // cheap-trap: a per-token-cheap model that fails so often the
+    // cascade-retry cost pushes its total above a more capable model.
+    const dominated = naiveStrategies
+      .map(s => {
+        const dominator = naiveStrategies.find(other =>
+          other !== s && other.total < s.total && other.meanScore > s.meanScore
+        )
+        return dominator ? { strategy: s, dominator } : null
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.strategy.total - a.strategy.total)
+
+    return {
+      tasks, models, perTaskVolume,
+      strategies: allStrategies,
+      naiveStrategies,
+      cacr: cacrStrategy,
+      cheapestNaive,
+      mostExpensiveNaive,
+      dominated,
+    }
+  }, [matrix, monthlyVolume])
+
+  if (loading) return <Loader />
+  if (error) return <ErrorView message={error} />
+  if (!analysis) return <EmptyView />
+
+  const { tasks, strategies, cacr, cheapestNaive, mostExpensiveNaive, dominated } = analysis
+
+  const cacrVsMostExpensive = mostExpensiveNaive.total - cacr.total
+  const cacrVsCheapest = cacr.total - cheapestNaive.total
 
   return (
     <div>
       <div className="mb-6">
         <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-teal-700 font-semibold mb-2">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-teal-500" />
-          Interactive · Single routing decision
+          Original thesis · Cascade failure pricing
         </div>
-        <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Try the Router</h2>
+        <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Cost of Bad Routing</h2>
         <p className="text-slate-600 mt-2 max-w-3xl leading-relaxed">
-          Paste any code snippet and watch CACR pick a model, justify the choice, and quote the expected cost. Same
-          routing logic that powers the live demo, exposed as an interactive sandbox so you can probe edge cases.
+          What does it cost when you don't route intelligently? Static per-token pricing
+          hides the real bill: when a model fails, cascade retries compound the cost. A
+          cheap-and-unreliable model can end up more expensive than smart routing — and
+          a few dominated strategies are strictly worse than CACR's pick on every axis.
+          This view rolls per-call expected cost up to a monthly total at your volume so
+          you can see the price of never routing.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Input form */}
-        <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-xl p-6 flex flex-col gap-5 shadow-sm">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Code Snippet</label>
-            <textarea
-              value={form.code_snippet}
-              onChange={(e) => updateField('code_snippet', e.target.value)}
-              rows={8}
-              placeholder="Paste your code snippet here..."
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-900 font-mono placeholder:text-slate-400 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:bg-white resize-y"
-            />
+      {/* Volume control */}
+      <div className="mb-6 bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+        <div className="flex items-baseline justify-between mb-2">
+          <label className="text-sm font-medium text-slate-700">
+            Monthly task volume
+          </label>
+          <div className="text-sm text-slate-500">
+            <span className="font-mono font-bold text-slate-900">{monthlyVolume.toLocaleString()}</span>{' '}
+            tasks · ~<span className="font-mono">{Math.round(monthlyVolume / tasks.length).toLocaleString()}</span> per task type
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Task</label>
-              <select
-                value={form.task}
-                onChange={(e) => updateField('task', e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
-              >
-                <option value="" disabled>Select task type...</option>
-                <option value="CodeReview">Code Review</option>
-                <option value="SecurityVuln">Security Vuln</option>
-                <option value="CodeSummarization">Code Summarization</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Complexity</label>
-              <select
-                value={form.complexity}
-                onChange={(e) => updateField('complexity', e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
-              >
-                <option value="auto">Auto (infer from code)</option>
-                <option value="easy">Easy</option>
-                <option value="medium">Medium</option>
-                <option value="hard">Hard</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Pipeline Position</label>
-              <select
-                value={form.pipeline_position}
-                onChange={(e) => updateField('pipeline_position', Number(e.target.value))}
-                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
-              >
-                <option value={1}>1 (First)</option>
-                <option value={2}>2 (Middle)</option>
-                <option value={3}>3 (Last)</option>
-              </select>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading || !form.code_snippet.trim() || !form.task}
-            className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm mt-auto shadow-sm disabled:shadow-none"
-          >
-            {loading ? 'Routing...' : 'Route Request'}
-          </button>
-        </form>
-
-        {/* Results */}
-        <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 shadow-sm">
-          {/* Content-mismatch warning — sits above all result rendering */}
-          {mismatchWarning && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-amber-900 text-sm">
-              <div className="font-semibold mb-1">⚠ Heads up: this code contains patterns commonly associated with security vulnerabilities</div>
-              <div className="text-amber-800 mb-3">
-                Detected: <span className="font-mono">{mismatchWarning.patterns.join(', ')}</span>.
-                You selected <span className="font-semibold">{TASK_LABELS[mismatchWarning.originalTask] || mismatchWarning.originalTask}</span> —
-                did you mean Security Vuln?
-              </div>
-              <button
-                type="button"
-                onClick={switchToSecurityVuln}
-                className="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs px-3 py-1.5 rounded transition-colors shadow-sm"
-              >
-                Switch to Security Vuln
-              </button>
-            </div>
-          )}
-
-          {!result && !error && !mismatchWarning && (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center max-w-xs px-4">
-                <div className="text-sm font-medium text-slate-700">Pick a task and hit "Route Request"</div>
-                <div className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                  CACR will return: which model it picked, the expected cost, a confidence interval, and a written
-                  justification you can audit.
-                </div>
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-700 text-sm">
-              Error: {error}
-            </div>
-          )}
-
-          {result && (
-            <div className="space-y-5">
-              {/* Below-threshold warning — first thing inside the result block */}
-              {result.below_threshold && result.warning && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-amber-900 text-sm">
-                  <div className="font-semibold mb-1">⚠ All models below threshold</div>
-                  <div className="text-amber-800">{result.warning}</div>
-                </div>
-              )}
-
-              {/* Inferred complexity badge */}
-              {result.inferred_complexity && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full px-3 py-1 font-medium">
-                    Complexity inferred: {result.inferred_complexity}
-                  </span>
-                </div>
-              )}
-
-              {/* Recommended model */}
-              <div>
-                <span className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Recommended Model</span>
-                <p className="text-2xl font-bold text-teal-700 mt-0.5 tracking-tight">{result.recommended_model || result.model || '—'}</p>
-              </div>
-
-              {/* Confidence interval bar */}
-              {result.confidence_interval && (
-                <div>
-                  <div className="flex justify-between items-baseline mb-1.5">
-                    <span className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Confidence Interval</span>
-                    <span className="text-sm font-mono text-slate-700">
-                      {(result.confidence_interval[0] * 100).toFixed(0)}% – {(result.confidence_interval[1] * 100).toFixed(0)}%
-                    </span>
-                  </div>
-                  <div className="relative w-full bg-slate-100 rounded-full h-3 overflow-hidden">
-                    <div
-                      className="absolute h-full rounded-full transition-all duration-500"
-                      style={{
-                        left: `${result.confidence_interval[0] * 100}%`,
-                        width: `${(result.confidence_interval[1] - result.confidence_interval[0]) * 100}%`,
-                        background: `linear-gradient(90deg, #0D9488, #6366F1)`,
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Cost */}
-              {result.expected_cost != null && (
-                <div>
-                  <span className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Expected Cost</span>
-                  <p className="text-lg font-mono font-bold text-emerald-700 mt-0.5">${Number(result.expected_cost).toFixed(4)}</p>
-                </div>
-              )}
-
-              {/* Reasoning */}
-              {result.reasoning && (
-                <div>
-                  <span className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2 block">Reasoning</span>
-                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-700 prose prose-slate prose-sm max-w-none">
-                    <ReactMarkdown>{result.reasoning}</ReactMarkdown>
-                  </div>
-                </div>
-              )}
-
-              {/* Extra fields */}
-              {result.cascade_step != null && (
-                <div className="flex gap-6 pt-3 border-t border-slate-200">
-                  <div>
-                    <span className="text-xs text-slate-500 uppercase tracking-wider">Cascade Step</span>
-                    <p className="text-sm font-mono text-slate-700">{result.cascade_step}</p>
-                  </div>
-                  {result.escalated != null && (
-                    <div>
-                      <span className="text-xs text-slate-500 uppercase tracking-wider">Escalated</span>
-                      <p className="text-sm font-mono text-slate-700">{result.escalated ? 'Yes' : 'No'}</p>
-                    </div>
-                  )}
-                </div>
-              )}
-              <ELI5Panel
-                dataSummary={`Task: ${form.task}, Recommended model: ${result.recommended_model}, Expected cost: $${result.expected_cost?.toFixed(6)}, Complexity: ${result.inferred_complexity || result.complexity || 'unknown'}, Reasoning: ${result.reasoning}`}
-                promptHint="You are explaining an AI routing decision to a non-technical person. In plain English, explain why this model was picked for this task, what it costs, and whether this is a sensible recommendation. Don't use technical jargon — explain it like you're talking to a product manager."
-                taskName={form.task}
-                warning={result.warning}
-                refreshKey={`${result.recommended_model}|${form.task}|${result.below_threshold ? 'below' : 'ok'}`}
-              />
-            </div>
-          )}
         </div>
+        <input
+          type="range"
+          min={100}
+          max={1000000}
+          step={100}
+          value={monthlyVolume}
+          onChange={(e) => setMonthlyVolume(Number(e.target.value))}
+          className="w-full accent-teal-600"
+        />
+        <div className="flex justify-between text-xs text-slate-500 mt-1">
+          <span>100</span>
+          <span>10K</span>
+          <span>100K</span>
+          <span>1M</span>
+        </div>
+        <p className="text-xs text-slate-500 mt-3 leading-relaxed">
+          Volume is split evenly across the {tasks.length} benchmark task types. Real workloads
+          are skewed; the absolute dollar amounts will rescale linearly but the strategy
+          ordering and the size of the spread are what matter.
+        </p>
+      </div>
+
+      {/* Spotlight cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <SpotlightCard
+          title="Most expensive naive"
+          subtitle="Send every task to this one model"
+          strategy={mostExpensiveNaive}
+          accent="red"
+        />
+        <SpotlightCard
+          title="Cheapest naive"
+          subtitle="Send every task to this one model"
+          strategy={cheapestNaive}
+          accent="amber"
+        />
+        <SpotlightCard
+          title="CACR routing"
+          subtitle="Per-task cost-optimal pick"
+          strategy={cacr}
+          accent="teal"
+        />
+      </div>
+
+      {/* Headline comparison */}
+      <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+          <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">
+            CACR vs always-most-expensive
+          </div>
+          <div className="text-3xl font-mono font-bold text-emerald-700">
+            {fmt$(cacrVsMostExpensive)}<span className="text-sm text-slate-500 font-sans"> saved / mo</span>
+          </div>
+          <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+            CACR scores <span className="font-mono">{fmtScore(cacr.meanScore)}</span> avg vs
+            {' '}<span className="font-mono">{fmtScore(mostExpensiveNaive.meanScore)}</span> for
+            {' '}{mostExpensiveNaive.label} — almost the same quality at a fraction of the price.
+          </p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+          <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">
+            CACR vs always-cheapest
+          </div>
+          <div className="text-3xl font-mono font-bold text-slate-900">
+            {cacrVsCheapest >= 0 ? '+' : '-'}{fmt$(Math.abs(cacrVsCheapest))}
+            <span className="text-sm text-slate-500 font-sans"> / mo</span>
+          </div>
+          <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+            CACR passes the 0.70 floor on <span className="font-mono">{cacr.passingTasks}/{cacr.taskCount}</span> tasks vs
+            {' '}<span className="font-mono">{cheapestNaive.passingTasks}/{cheapestNaive.taskCount}</span> for
+            {' '}{cheapestNaive.label}. The premium buys quality coverage, not just headline accuracy.
+          </p>
+        </div>
+      </div>
+
+      {/* Dominated strategies (cheap-trap callout) */}
+      {dominated.length > 0 && (
+        <div className="mb-6 bg-indigo-50 border border-indigo-200 rounded-xl p-5 text-sm text-indigo-900">
+          <div className="font-bold mb-2">The cheap trap — dominated strategies</div>
+          <p className="leading-relaxed mb-2">
+            {dominated.length === 1 ? 'One naive strategy is' : `${dominated.length} naive strategies are`} strictly dominated:
+            another model is BOTH cheaper AND higher-scoring across the board. No reason to ever pick these.
+          </p>
+          <ul className="space-y-1.5">
+            {dominated.slice(0, 3).map(({ strategy, dominator }) => (
+              <li key={strategy.label} className="text-xs">
+                <span className="font-mono font-semibold">{strategy.label}</span>{' '}
+                ({fmt$(strategy.total)}/mo, score {fmtScore(strategy.meanScore)})
+                {' '}is dominated by{' '}
+                <span className="font-mono font-semibold">{dominator.label}</span>{' '}
+                ({fmt$(dominator.total)}/mo, score {fmtScore(dominator.meanScore)})
+                {' '}— {fmt$(strategy.total - dominator.total)} cheaper and{' '}
+                +{(dominator.meanScore - strategy.meanScore).toFixed(2)} accuracy.
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Strategy table */}
+      <div className="bg-white border border-slate-200 rounded-xl p-6 overflow-x-auto mb-6 shadow-sm">
+        <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">
+          All strategies, sorted cheapest first
+        </h3>
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="border-b border-slate-200">
+              <th className="text-left px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Strategy</th>
+              {tasks.map(t => (
+                <th key={t} className="text-right px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  {TASK_LABELS[t] || t}
+                </th>
+              ))}
+              <th className="text-right px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Total / mo</th>
+              <th className="text-right px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Avg score</th>
+              <th className="text-center px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500">≥0.7</th>
+            </tr>
+          </thead>
+          <tbody>
+            {strategies.map((s) => {
+              const isCacr = s.kind === 'cacr'
+              const rowCls = isCacr
+                ? 'bg-teal-50 border-y-2 border-teal-300'
+                : ''
+              return (
+                <tr key={`${s.kind}-${s.label}`} className={`border-b border-slate-100 last:border-0 ${rowCls}`}>
+                  <td className="px-3 py-3 text-slate-800">
+                    <div className="flex items-center gap-2">
+                      {s.model && (
+                        <span
+                          className="inline-block w-2 h-2 rounded-full shrink-0"
+                          style={{ background: modelColor(s.model) }}
+                          aria-hidden="true"
+                        />
+                      )}
+                      {isCacr && (
+                        <span className="text-[10px] bg-teal-600 text-white rounded-full px-2 py-0.5 font-semibold uppercase tracking-wider">
+                          smart
+                        </span>
+                      )}
+                      <span className={isCacr ? 'font-bold text-teal-900' : 'font-medium'}>{s.label}</span>
+                    </div>
+                  </td>
+                  {tasks.map(t => (
+                    <td key={t} className="px-3 py-3 text-right">
+                      <div className="font-mono text-slate-700">{fmt$(s.taskCosts[t])}</div>
+                      <div className={`text-[10px] font-mono mt-0.5 ${(s.taskScores[t] ?? 0) >= MIN_ACCEPTABLE_SCORE ? 'text-emerald-600' : 'text-red-500'}`}>
+                        score {fmtScore(s.taskScores[t])}
+                      </div>
+                    </td>
+                  ))}
+                  <td className={`px-3 py-3 text-right font-mono font-bold ${isCacr ? 'text-teal-700' : 'text-slate-900'}`}>
+                    {fmt$(s.total)}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono text-slate-700">
+                    {fmtScore(s.meanScore)}
+                  </td>
+                  <td className="px-3 py-3 text-center text-xs">
+                    <span className={`font-mono ${s.passingTasks === s.taskCount ? 'text-emerald-700 font-semibold' : s.passingTasks === 0 ? 'text-red-700' : 'text-amber-700'}`}>
+                      {s.passingTasks}/{s.taskCount}
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+        <p className="mt-3 text-xs text-slate-500 leading-relaxed">
+          Per-task scores below 0.70 are shown in red. CACR routing's "≥0.7" count is the number of tasks where
+          a model actually exists that clears the global floor — when nothing exists (e.g. Code Summary on this
+          dataset) CACR returns best-available with a below-threshold warning rather than silently picking a
+          sub-floor model.
+        </p>
+      </div>
+
+      {/* Formula */}
+      <div className="bg-white border border-slate-200 rounded-xl p-6 mb-6 shadow-sm">
+        <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">
+          The expected cost formula
+        </h3>
+        <code className="block text-xs text-indigo-700 bg-slate-100 border border-slate-200 rounded-lg p-3 font-mono leading-relaxed">
+          expected_cost = (cost_per_token × mean_tokens) × P(success)<br />
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ retry_cost × P(failure) × cascade_depth
+        </code>
+        <p className="text-xs text-slate-500 mt-3 leading-relaxed">
+          P(failure) = 1 − mean_score. cascade_depth = 3 (one pipeline run). retry_cost = one Haiku
+          fallback call. A model with 40% accuracy on a task pays the retry cost 60% of the time, three
+          times over — which is why the model with the lowest sticker price often isn't the cheapest
+          when you bake in failure pricing.
+        </p>
+      </div>
+
+      <ELI5Panel
+        dataSummary={[
+          `Monthly volume: ${monthlyVolume} tasks, split across ${tasks.length} task types (${tasks.join(', ')}).`,
+          `CACR routing: ${fmt$(cacr.total)}/mo, avg score ${fmtScore(cacr.meanScore)}, passes 0.70 floor on ${cacr.passingTasks}/${cacr.taskCount} tasks.`,
+          `Cheapest naive (${cheapestNaive.label}): ${fmt$(cheapestNaive.total)}/mo, avg score ${fmtScore(cheapestNaive.meanScore)}, passes on ${cheapestNaive.passingTasks}/${cheapestNaive.taskCount} tasks.`,
+          `Most expensive naive (${mostExpensiveNaive.label}): ${fmt$(mostExpensiveNaive.total)}/mo, avg score ${fmtScore(mostExpensiveNaive.meanScore)}, passes on ${mostExpensiveNaive.passingTasks}/${mostExpensiveNaive.taskCount} tasks.`,
+          dominated.length > 0
+            ? `Dominated strategies (worse than another on every axis): ${dominated.map(d => d.strategy.label).join(', ')}.`
+            : 'No strictly dominated strategies at this volume.',
+        ].join('\n')}
+        promptHint="You are explaining cascade-aware routing economics to a non-technical engineer. In plain English, describe what 'cost of bad routing' means: per-token sticker price is misleading because a model that fails forces retry costs that compound. Compare CACR's total to the cheapest-naive and most-expensive-naive totals — quote the actual dollar amounts and accuracy numbers. Call out any dominated strategies if present. Do not use marketing phrases like 'best of both worlds', 'smart trade-off', or 'good value' — describe what the numbers show and let the reader judge."
+        warning={cacr.passingTasks < cacr.taskCount
+          ? `CACR routing still falls below the 0.70 accuracy floor on ${cacr.taskCount - cacr.passingTasks} of ${cacr.taskCount} task type(s) because no model in the benchmark passes the floor for those tasks. The dollar comparison here is an economic spread, not a quality endorsement.`
+          : undefined}
+        refreshKey={`cobr|vol=${monthlyVolume}|cacr=${cacr.total.toFixed(2)}`}
+      />
+    </div>
+  )
+}
+
+function SpotlightCard({ title, subtitle, strategy, accent }) {
+  const accentMap = {
+    red: { border: 'border-red-300', bg: 'bg-red-50', text: 'text-red-700' },
+    amber: { border: 'border-amber-300', bg: 'bg-amber-50', text: 'text-amber-700' },
+    teal: { border: 'border-teal-300', bg: 'bg-teal-50', text: 'text-teal-700' },
+  }
+  const a = accentMap[accent] || accentMap.teal
+  return (
+    <div className={`border rounded-xl p-5 ${a.bg} ${a.border}`}>
+      <div className="text-xs uppercase tracking-wider font-semibold text-slate-500">{title}</div>
+      <div className={`text-base font-bold mt-1 ${a.text}`}>
+        {strategy.model && (
+          <span
+            className="inline-block w-2 h-2 rounded-full mr-2 align-middle"
+            style={{ background: modelColor(strategy.model) }}
+          />
+        )}
+        {strategy.label}
+      </div>
+      <div className="text-xs text-slate-500 mt-0.5">{subtitle}</div>
+      <div className="text-2xl font-mono font-bold text-slate-900 mt-3">
+        {fmt$(strategy.total)}<span className="text-sm text-slate-500 font-sans"> / mo</span>
+      </div>
+      <div className="text-xs text-slate-600 mt-1">
+        avg score <span className="font-mono">{fmtScore(strategy.meanScore)}</span> ·
+        passes <span className="font-mono">{strategy.passingTasks}/{strategy.taskCount}</span> tasks
+      </div>
+    </div>
+  )
+}
+
+function Loader() {
+  return (
+    <div className="flex items-center justify-center h-64">
+      <div className="text-center max-w-sm px-6">
+        <div className="animate-pulse text-slate-700 text-sm font-medium">Loading the cost matrix…</div>
+        <div className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+          Computing per-strategy monthly totals: naive (always-one-model) and CACR routing.
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ErrorView({ message }) {
+  return (
+    <div className="flex items-center justify-center h-64">
+      <div className="bg-red-50 border border-red-200 rounded-lg px-6 py-4 text-red-700 text-sm">
+        Failed to load cost matrix: {message}
+      </div>
+    </div>
+  )
+}
+
+function EmptyView() {
+  return (
+    <div className="flex items-center justify-center h-64">
+      <div className="bg-white border border-slate-200 rounded-lg px-6 py-4 text-slate-600 text-sm shadow-sm">
+        No cost matrix data available.
       </div>
     </div>
   )

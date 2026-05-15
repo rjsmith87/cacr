@@ -8,10 +8,10 @@ import CostModel from './views/CostModel'
 
 const navItems = [
   { to: '/', label: 'Live Demo', accent: true },
-  { to: '/live-router', label: 'Live Router', accent: true },
+  { to: '/live-router', label: 'Try the Router', accent: true },
   { to: '/capability', label: 'Which Model Wins What' },
   { to: '/calibration', label: 'Confidence Accuracy' },
-  { to: '/router', label: 'Try the Router' },
+  { to: '/router', label: 'Cost of Bad Routing' },
   { to: '/cost-model', label: 'Cost Calculator' },
 ]
 

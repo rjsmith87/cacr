@@ -169,7 +169,7 @@ export default function LiveRouter() {
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-teal-500" />
           Interactive · Real model call
         </div>
-        <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Live Router</h2>
+        <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Try the Router</h2>
         <p className="text-slate-600 mt-2 max-w-3xl leading-relaxed">
           Send a task to the API. CACR classifies its complexity, picks the cheapest model
           that meets the accuracy floor for the task type, calls that model, and cascades up
