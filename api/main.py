@@ -389,9 +389,18 @@ def route_prompt():
 
     prompt = _clean_str(data.get("prompt"), field="prompt", max_len=5000)
 
-    task = data.get("task", "CodeReview")
+    # Accept `task_type` (canonical, matches /api/route/run) or `task`
+    # (legacy field name kept for the existing dashboard / RouterPlayground
+    # client). Previously this endpoint read only `task` and silently
+    # defaulted to CodeReview when absent — a caller sending
+    # `task_type=SecurityVuln` got routed as CodeReview, which was the
+    # exact silent-misclassification bug. Require the field explicitly
+    # now; no implicit fallback.
+    task = data.get("task_type") or data.get("task")
+    if task is None:
+        abort(400, "task_type (string) is required")
     if task not in _VALID_TASKS:
-        abort(400, f"task must be one of: {sorted(_VALID_TASKS)}")
+        abort(400, f"task_type must be one of: {sorted(_VALID_TASKS)}")
 
     task_family = data.get("task_family", "classification")
     if task_family not in _VALID_TASK_FAMILIES:

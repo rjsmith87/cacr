@@ -1021,6 +1021,59 @@ def test_compare_all_models_returns_per_model_results_and_routing_pick():
     )
 
 
+# ── /api/route param-name regression ──────────────────────────────
+#
+# /api/route used to read `task` only and silently default to
+# CodeReview when absent — sending `task_type=SecurityVuln` got
+# routed as CodeReview. Endpoint now accepts task_type (canonical) +
+# task (legacy alias) and rejects requests that supply neither.
+
+def test_api_route_honors_task_type_param():
+    from api.main import app
+    client = app.test_client()
+    r = client.post(
+        "/api/route",
+        json={"prompt": "import os; os.system(x)", "task_type": "SecurityVuln"},
+    )
+    assert r.status_code == 200
+    body = r.get_json()
+    # The reasoning string carries the resolved task — confirms task_type
+    # actually flowed into the routing decision and wasn't dropped.
+    assert "SecurityVuln" in (body.get("reasoning") or "")
+
+
+def test_api_route_still_accepts_legacy_task_param():
+    from api.main import app
+    client = app.test_client()
+    r = client.post(
+        "/api/route",
+        json={"prompt": "def f(): pass", "task": "CodeReview"},
+    )
+    assert r.status_code == 200
+    assert "CodeReview" in (r.get_json().get("reasoning") or "")
+
+
+def test_api_route_rejects_missing_task_type():
+    """No silent CodeReview default — caller must specify the task."""
+    from api.main import app
+    client = app.test_client()
+    r = client.post("/api/route", json={"prompt": "def f(): pass"})
+    assert r.status_code == 400
+    assert "task_type" in (r.get_json().get("detail") or "")
+
+
+def test_api_route_task_type_wins_over_legacy_task():
+    """If a caller passes both, task_type (canonical) takes precedence."""
+    from api.main import app
+    client = app.test_client()
+    r = client.post(
+        "/api/route",
+        json={"prompt": "x", "task": "CodeReview", "task_type": "SecurityVuln"},
+    )
+    assert r.status_code == 200
+    assert "SecurityVuln" in (r.get_json().get("reasoning") or "")
+
+
 def test_live_router_surfaces_runner_error_on_initial_call():
     """When the model_runner returns an error the route_and_run
     response must include it under .error so the API consumer can see
