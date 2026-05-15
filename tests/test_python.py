@@ -862,3 +862,196 @@ def test_router_default_logprob_threshold_is_documented_placeholder():
     the constant, update the calibration comment in cascade_router.py
     and bump this test."""
     assert DEFAULT_LOGPROB_THRESHOLD == 0.96
+
+
+# ── Live router (route_and_run + compare_all_models) ───────────────
+#
+# Verifies the end-to-end "classify → pick cheapest passing → call
+# model → cascade if low confidence" flow with a mocked model runner.
+# Routing uses the real cost_matrix.csv that ships in the repo — the
+# cost matrix is the production source of truth, not a fixture, so
+# the tests fail loudly if its contents drift in a way the live
+# router can't handle.
+
+from router.live_router import (  # noqa: E402
+    route_and_run,
+    compare_all_models,
+    _CONFIDENCE_INSTRUCTION,
+)
+
+
+def test_live_router_routes_security_vuln_to_flash_lite():
+    """SecurityVuln's cheapest passing model in the shipped cost matrix
+    is Flash Lite. With a runner that returns high-confidence text,
+    routing accepts the initial pick without escalating."""
+    calls: list[str] = []
+
+    def runner(model: str, prompt: str) -> dict:
+        calls.append(model)
+        assert _CONFIDENCE_INSTRUCTION in prompt  # confidence wrap applied
+        return {
+            "output": "vulnerable: yes\nconfidence: 9",
+            "latency_ms": 123.0,
+            "cost_usd": 0.0001,
+            "error": None,
+            "logprob_mean": None,
+            "logprob_min": None,
+            "output_token_count": 0,
+        }
+
+    result = route_and_run(
+        task="Is this code vulnerable? def f(): pass",
+        task_type="SecurityVuln",
+        model_runner=runner,
+    )
+
+    assert result.model_used == "gemini-2.5-flash-lite"
+    assert result.cascaded is False
+    assert result.initial_model == "gemini-2.5-flash-lite"
+    assert result.escalation_model is None
+    assert result.confidence == 9
+    assert result.below_threshold is False
+    assert calls == ["gemini-2.5-flash-lite"]
+    assert result.response == "vulnerable: yes\nconfidence: 9"
+    assert result.latency_ms == 123.0
+
+
+def test_live_router_cascades_when_initial_confidence_below_threshold():
+    """When the cheapest model returns low confidence the router must
+    escalate to the next-cheapest qualifying model — exactly once."""
+    calls: list[str] = []
+
+    def runner(model: str, _prompt: str) -> dict:
+        calls.append(model)
+        # First call (cheapest) returns low conf, escalation returns high.
+        conf = 4 if model == "gemini-2.5-flash-lite" else 9
+        return {
+            "output": f"vulnerable: yes\nconfidence: {conf}",
+            "latency_ms": 100.0,
+            "cost_usd": 0.0001 if model == "gemini-2.5-flash-lite" else 0.001,
+            "error": None,
+            "logprob_mean": None,
+            "logprob_min": None,
+            "output_token_count": 0,
+        }
+
+    result = route_and_run(
+        task="Some SQL injection test",
+        task_type="SecurityVuln",
+        model_runner=runner,
+    )
+
+    assert result.cascaded is True
+    assert result.initial_model == "gemini-2.5-flash-lite"
+    assert result.initial_confidence == 4
+    assert result.escalation_model is not None
+    assert result.escalation_model != result.initial_model
+    assert result.escalation_confidence == 9
+    assert result.model_used == result.escalation_model
+    # Two calls — initial + one escalation, never more.
+    assert len(calls) == 2
+
+
+def test_live_router_flags_below_threshold_for_codesummarization():
+    """No model in the shipped matrix scores >= 0.70 on CodeSummarization.
+    The router must surface best-available + below_threshold + warning
+    rather than silently picking a sub-floor model."""
+    def runner(_model: str, _prompt: str) -> dict:
+        return {
+            "output": "summary text\nconfidence: 6",
+            "latency_ms": 50.0,
+            "cost_usd": 0.0001,
+            "error": None,
+            "logprob_mean": None,
+            "logprob_min": None,
+            "output_token_count": 0,
+        }
+
+    result = route_and_run(
+        task="Summarize this snippet",
+        task_type="CodeSummarization",
+        model_runner=runner,
+    )
+
+    assert result.below_threshold is True
+    assert result.warning is not None
+    assert "0.7" in result.warning  # references MIN_ACCEPTABLE_SCORE
+
+
+def test_compare_all_models_returns_per_model_results_and_routing_pick():
+    """compare_all_models fans out to every model in MODEL_COSTS and
+    flags which one the router would have picked. Mocked runner keeps
+    costs/latencies deterministic so the cost-saved math is exact."""
+    seen: list[str] = []
+
+    def runner(model: str, _prompt: str) -> dict:
+        seen.append(model)
+        # Per-model deterministic cost so we can assert the sum.
+        cost = 0.001 if model == "claude-opus-4-7" else 0.0001
+        return {
+            "output": f"{model} says: vulnerable: no\nconfidence: 8",
+            "latency_ms": 100.0,
+            "cost_usd": cost,
+            "error": None,
+            "logprob_mean": None,
+            "logprob_min": None,
+            "output_token_count": 0,
+        }
+
+    result = compare_all_models(
+        task="Is this vulnerable?",
+        task_type="SecurityVuln",
+        model_runner=runner,
+    )
+
+    from router.cost_model import MODEL_COSTS
+    model_count = len(MODEL_COSTS)
+    assert len(result["results"]) == model_count
+    assert set(seen) == set(MODEL_COSTS.keys())
+    # Routed pick exists in the per-model results and matches the
+    # cheapest-passing SecurityVuln model from the cost matrix.
+    assert result["routed_model"] == "gemini-2.5-flash-lite"
+    routed_row = next(r for r in result["results"] if r["model"] == result["routed_model"])
+    assert result["routed_cost_estimate"] == routed_row["cost_usd"]
+    # Cost-savings math: total - routed.
+    expected_total = (model_count - 1) * 0.0001 + 0.001
+    assert result["total_cost_if_all_models_run"] == pytest.approx(expected_total, abs=1e-8)
+    assert result["cost_saved_vs_running_all"] == pytest.approx(
+        expected_total - routed_row["cost_usd"], abs=1e-8
+    )
+
+
+def test_live_router_surfaces_runner_error_on_initial_call():
+    """When the model_runner returns an error the route_and_run
+    response must include it under .error so the API consumer can see
+    the model failed even if the cascade returned text."""
+    def runner(model: str, _prompt: str) -> dict:
+        # Initial errors, escalation succeeds — error should still surface.
+        if model == "gemini-2.5-flash-lite":
+            return {
+                "output": "",
+                "latency_ms": 10.0,
+                "cost_usd": 0.0,
+                "error": "RuntimeError: API timeout",
+                "logprob_mean": None,
+                "logprob_min": None,
+                "output_token_count": 0,
+            }
+        return {
+            "output": "vulnerable: yes\nconfidence: 9",
+            "latency_ms": 100.0,
+            "cost_usd": 0.001,
+            "error": None,
+            "logprob_mean": None,
+            "logprob_min": None,
+            "output_token_count": 0,
+        }
+
+    result = route_and_run(
+        task="x",
+        task_type="SecurityVuln",
+        model_runner=runner,
+    )
+
+    assert result.cascaded is True
+    assert result.error == "RuntimeError: API timeout"

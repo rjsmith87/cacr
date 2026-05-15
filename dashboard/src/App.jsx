@@ -2,11 +2,13 @@ import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import CapabilityMatrix from './views/CapabilityMatrix'
 import CalibrationExplorer from './views/CalibrationExplorer'
 import CascadeDemo from './views/CascadeDemo'
+import LiveRouter from './views/LiveRouter'
 import RouterPlayground from './views/RouterPlayground'
 import CostModel from './views/CostModel'
 
 const navItems = [
   { to: '/', label: 'Live Demo', accent: true },
+  { to: '/live-router', label: 'Live Router', accent: true },
   { to: '/capability', label: 'Which Model Wins What' },
   { to: '/calibration', label: 'Confidence Accuracy' },
   { to: '/router', label: 'Try the Router' },
@@ -77,6 +79,7 @@ function App() {
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <Routes>
             <Route path="/" element={<CascadeDemo />} />
+            <Route path="/live-router" element={<LiveRouter />} />
             <Route path="/capability" element={<CapabilityMatrix />} />
             <Route path="/calibration" element={<CalibrationExplorer />} />
             <Route path="/router" element={<RouterPlayground />} />

@@ -1,6 +1,6 @@
 """CACR — Flask backend.
 
-Endpoints (11):
+Endpoints (13):
   GET  /                          — service index listing all endpoints
   GET  /health                    — Render health check
   GET  /api/health                — status, model count, task count, total calls
@@ -8,7 +8,9 @@ Endpoints (11):
   GET  /api/calibration           — confidence vs accuracy scatter data per model
   GET  /api/pipeline-cost         — pipeline strategy comparison
   GET  /api/cost-matrix           — cost_matrix.csv as JSON
-  POST /api/route                 — route a prompt to cost-optimal model
+  POST /api/route                 — return routing decision (no model call)
+  POST /api/route/run             — route AND execute: real call + cascade
+  POST /api/route/compare         — run the same task through all models
   GET  /api/findings              — FINDINGS.md as markdown
   POST /api/explain-calibration   — Claude ELI5 of calibration data
   POST /api/explain               — generic Claude ELI5 endpoint
@@ -209,6 +211,8 @@ def index():
             "/api/pipeline-cost",
             "/api/cost-matrix",
             "/api/route",
+            "/api/route/run",
+            "/api/route/compare",
             "/api/findings",
             "/api/explain-calibration",
             "/api/explain",
@@ -603,6 +607,16 @@ _EXPLAIN_RATE: dict[str, list[float]] = {}
 _EXPLAIN_PER_MINUTE = 10
 _ROUTE_RATE: dict[str, list[float]] = {}
 _ROUTE_PER_MINUTE = 30
+# /api/route/run actually invokes a paid model (one call + maybe one
+# escalation call). 15/min/IP is roughly half /api/route's quota because
+# each request costs real money rather than just consulting a CSV.
+_ROUTE_RUN_RATE: dict[str, list[float]] = {}
+_ROUTE_RUN_PER_MINUTE = 15
+# /api/route/compare fans out to every model in MODEL_COSTS (8 today),
+# so each call costs ~8× a single live route. Same cooldown pattern as
+# /api/cascade-compare but doubled because the spend per call is higher.
+_ROUTE_COMPARE_RATE_LIMIT_LAST: dict[str, float] = {}
+_ROUTE_COMPARE_COOLDOWN_S = 60
 _RATE_WINDOW_S = 60
 _RATE_DICT_HARD_CAP = 10_000
 
@@ -713,6 +727,108 @@ def cascade_compare():
         # OOM SIGKILLs mid-ssl.recv. Forcing a full GC sweep after the
         # response is rendered evicts the now-unreferenced adapters
         # before the next request arrives.
+        import gc
+        gc.collect()
+
+
+# ── POST /api/route/run ────────────────────────────────────────────
+#
+# Live routing: classify complexity, pick the cheapest model meeting
+# the accuracy floor for the task type, ACTUALLY CALL IT, cascade up
+# if confidence is low. Differs from POST /api/route, which only
+# returns the routing decision without invoking the model.
+#
+# Cost: one model call + at most one escalation call. Rate-limited to
+# 15/min/IP — half of /api/route's quota because each request spends
+# real money.
+
+@app.route("/api/route/run", methods=["POST"])
+def route_run():
+    ok, retry_in = _check_rate_limit(_ROUTE_RUN_RATE, _client_ip(), _ROUTE_RUN_PER_MINUTE)
+    if not ok:
+        resp = jsonify({
+            "error": f"rate limited: {_ROUTE_RUN_PER_MINUTE} requests per minute per IP",
+            "retry_in_seconds": retry_in,
+        })
+        resp.headers["Retry-After"] = str(retry_in)
+        return resp, 429
+
+    data = request.get_json(force=True, silent=True) or {}
+
+    task = _clean_str(data.get("task"), field="task", max_len=_MAX_CODE_CHARS)
+
+    task_type = data.get("task_type")
+    if task_type not in _VALID_TASKS:
+        abort(400, f"task_type must be one of: {sorted(_VALID_TASKS)}")
+
+    threshold = data.get("escalation_threshold", 7)
+    try:
+        threshold = float(threshold)
+    except (TypeError, ValueError):
+        abort(400, "escalation_threshold must be a number")
+    if not 1 <= threshold <= 10:
+        abort(400, "escalation_threshold must be between 1 and 10")
+
+    try:
+        from router.live_router import route_and_run, as_dict
+        result = route_and_run(
+            task=task,
+            task_type=task_type,
+            escalation_threshold=threshold,
+        )
+        return jsonify(as_dict(result))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+    finally:
+        # Same OOM-defense pattern as /api/cascade-compare: each call
+        # builds 1-2 fresh adapter instances with SDK clients; nudge
+        # CPython to reclaim them before the next request lands.
+        import gc
+        gc.collect()
+
+
+# ── POST /api/route/compare ────────────────────────────────────────
+#
+# Side-by-side: run the same task through every model in MODEL_COSTS
+# and show which model the router would have picked. Demonstrates the
+# cost savings of routing vs running every model. Heavily rate-limited
+# (60-second per-IP cooldown) because each call burns ~8× the cost
+# of a single live route.
+
+@app.route("/api/route/compare", methods=["POST"])
+def route_compare():
+    ip = _client_ip()
+    now = time.time()
+    last = _ROUTE_COMPARE_RATE_LIMIT_LAST.get(ip, 0.0)
+    elapsed = now - last
+    if elapsed < _ROUTE_COMPARE_COOLDOWN_S:
+        retry_in = round(_ROUTE_COMPARE_COOLDOWN_S - elapsed)
+        resp = jsonify({
+            "error": f"rate limited: {retry_in}s cooldown remaining",
+            "retry_in_seconds": retry_in,
+        })
+        resp.headers["Retry-After"] = str(retry_in)
+        return resp, 429
+
+    data = request.get_json(force=True, silent=True) or {}
+
+    task = _clean_str(data.get("task"), field="task", max_len=_MAX_CODE_CHARS)
+
+    task_type = data.get("task_type")
+    if task_type not in _VALID_TASKS:
+        abort(400, f"task_type must be one of: {sorted(_VALID_TASKS)}")
+
+    # Stamp the cooldown BEFORE running so a slow / failing request
+    # still counts against the client's quota.
+    _ROUTE_COMPARE_RATE_LIMIT_LAST[ip] = now
+
+    try:
+        from router.live_router import compare_all_models
+        result = compare_all_models(task=task, task_type=task_type)
+        return jsonify(result)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+    finally:
         import gc
         gc.collect()
 
